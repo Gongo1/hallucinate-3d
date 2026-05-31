@@ -1,0 +1,130 @@
+[
+  {
+    "slug": "house",
+    "label": "HOUSE · ハウス",
+    "color": "#ffb35e",
+    "sort": 0,
+    "records": [
+      {
+        "title": "Sweet",
+        "artist": "Raptures. & MAZAN",
+        "source": "youtube",
+        "yt_id": "G6uNEyZe4Nc",
+        "sc_url": null,
+        "sort": 0
+      },
+      {
+        "title": "Fade",
+        "artist": "Alan Walker",
+        "source": "youtube",
+        "yt_id": "bM7SZ5SBzyY",
+        "sc_url": null,
+        "sort": 1
+      },
+      {
+        "title": "Heroes Tonight",
+        "artist": "Janji",
+        "source": "youtube",
+        "yt_id": "3nQNiWdeH2Q",
+        "sc_url": null,
+        "sort": 2
+      }
+    ]
+  },
+  {
+    "slug": "melodic",
+    "label": "MELODIC · メロディック",
+    "color": "#e98b6b",
+    "sort": 1,
+    "records": [
+      {
+        "title": "Cappadocia (live)",
+        "artist": "Ben Böhmer",
+        "source": "youtube",
+        "yt_id": "RvRhUHTV_8k",
+        "sc_url": null,
+        "sort": 0
+      },
+      {
+        "title": "Alpe d'Huez",
+        "artist": "Adriatique",
+        "source": "youtube",
+        "yt_id": "CQZYzGO8QlM",
+        "sc_url": null,
+        "sort": 1
+      }
+    ]
+  },
+  {
+    "slug": "organic",
+    "label": "DEEP & ORGANIC · 深い",
+    "color": "#7fb4ad",
+    "sort": 2,
+    "records": [
+      {
+        "title": "Cercle Odyssey, Paris",
+        "artist": "Monolink",
+        "source": "youtube",
+        "yt_id": "nxuB96ppBLY",
+        "sc_url": null,
+        "sort": 0
+      },
+      {
+        "title": "Hakuba, Japan",
+        "artist": "ZHU",
+        "source": "youtube",
+        "yt_id": "XHNHq1mC0VQ",
+        "sc_url": null,
+        "sort": 1
+      }
+    ]
+  },
+  {
+    "slug": "techno",
+    "label": "TECHNO · テクノ",
+    "color": "#c879a6",
+    "sort": 3,
+    "records": [
+      {
+        "title": "Arènes de Nîmes",
+        "artist": "Boris Brejcha",
+        "source": "youtube",
+        "yt_id": "1MobY_vR7-g",
+        "sc_url": null,
+        "sort": 0
+      }
+    ]
+  },
+  {
+    "slug": "stacks",
+    "label": "THE STACKS · 長尺",
+    "color": "#9bb36b",
+    "sort": 4,
+    "records": [
+      {
+        "title": "Guatapé, Colombia",
+        "artist": "Above & Beyond",
+        "source": "youtube",
+        "yt_id": "MEzU1HvBo6Y",
+        "sc_url": null,
+        "sort": 0
+      },
+      {
+        "title": "Cercle Story — Ch. One",
+        "artist": "V/A",
+        "source": "youtube",
+        "yt_id": "3lTUAWOgoHs",
+        "sc_url": null,
+        "sort": 1
+      },
+      {
+        "title": "Cercle Story — Ch. Two",
+        "artist": "V/A",
+        "source": "youtube",
+        "yt_id": "cBy7qhJ4eyI",
+        "sc_url": null,
+        "sort": 2
+      }
+    ]
+  }
+]
