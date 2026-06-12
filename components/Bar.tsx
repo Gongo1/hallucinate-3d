@@ -143,6 +143,7 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
   const [crate, setCrate] = useState<CrateState | null>(null);
   const [ingestOpen, setIngestOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false); // touch: chat behind a 💬 toggle
+  const [menuOpen, setMenuOpen] = useState(false); // touch: topbar pills behind ☰
 
   // ----- lobby (Supabase Realtime presence) -----
   const [roster, setRoster] = useState(0);
@@ -558,7 +559,17 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
     <div id="wrap">
       <canvas ref={canvasRef} id="c" />
 
-      <div id="topbar">
+      <div id="topbar" className={menuOpen ? "open" : ""}>
+        {/* touch: the pills live behind this ☰ (CSS keeps them mounted — the
+            venue clock must keep ticking the world light even while hidden) */}
+        <button
+          id="menuBtn"
+          onClick={() => setMenuOpen((o) => !o)}
+          aria-label="menu"
+        >
+          {menuOpen ? "✕" : "☰"}
+          {!menuOpen && unseenAdds > 0 && <span className="badge">{unseenAdds}</span>}
+        </button>
         {started && <VenueClock engineRef={engineRef} />}
         {started && roster > 0 && (
           <div id="roster" title="listeners in the bar right now">
@@ -566,12 +577,25 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           </div>
         )}
         {started && (
-          <button id="addedBtn" onClick={openAdded} title="recently added records">
+          <button
+            id="addedBtn"
+            onClick={() => {
+              openAdded();
+              setMenuOpen(false);
+            }}
+            title="recently added records"
+          >
             ＋ added
             {unseenAdds > 0 && <span className="badge">{unseenAdds}</span>}
           </button>
         )}
-        <button id="addBtn" onClick={() => setIngestOpen(true)}>
+        <button
+          id="addBtn"
+          onClick={() => {
+            setIngestOpen(true);
+            setMenuOpen(false);
+          }}
+        >
           ＋ 新着 add records
         </button>
         {/* the worlds connect both ways — a quiet door back to Sombra */}
@@ -770,6 +794,9 @@ function NowPlaying({
   onUncue: (key: string) => void;
   onClearCue: () => void;
 }) {
+  // touch: the card rides collapsed (a slim top mini-bar); tap to expand.
+  // Desktop CSS ignores `open` entirely — the full card is always shown there.
+  const [open, setOpen] = useState(false);
   const t = np.track;
   const link = t?.scUrl ?? (t?.ytId ? `https://www.youtube.com/watch?v=${t.ytId}` : "#");
   const src =
@@ -786,15 +813,44 @@ function NowPlaying({
     : flow.skipNeed <= 1
     ? "⏭ skip room"
     : `⏭ skip (${flow.skipHave}/${flow.skipNeed})`;
+  const miniSkip =
+    cd > 0 ? `⏳${cd}` : !solo && flow.skipNeed > 1 ? `⏭ ${flow.skipHave}/${flow.skipNeed}` : "⏭";
   return (
-    <div id="np" className={np.visible ? "" : "hidden"}>
-      <div id="npHead">
+    <div id="np" className={(np.visible ? "" : "hidden") + (open ? " open" : "")}>
+      <div id="npHead" onClick={() => setOpen((o) => !o)}>
         <div className={"disc" + (np.playing ? " spin" : "")} />
         <div id="npMeta">
           <div id="npLabel">♫ THE ROOM · NOW PLAYING</div>
           <div id="npTitle">{t?.title ?? "—"}</div>
           <div id="npArtist">{t?.artist ?? "—"}</div>
           <div id="npSrc">{src}</div>
+        </div>
+        {/* touch-only quick controls — the whole mini-bar in one row */}
+        <div id="npMini">
+          <button
+            className="mbtn act"
+            title="mute / unmute — just you"
+            onClick={(e) => {
+              e.stopPropagation();
+              onMute();
+            }}
+          >
+            {np.playing ? "🔊" : "🔇"}
+          </button>
+          <button
+            className="mbtn act"
+            disabled={cd > 0}
+            title={solo ? "skip" : "vote to skip for the whole room"}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSkip();
+            }}
+          >
+            {miniSkip}
+          </button>
+          <button className="mbtn" aria-label="expand">
+            {open ? "▴" : "▾"}
+          </button>
         </div>
       </div>
       <div id="bar">

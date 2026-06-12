@@ -449,7 +449,7 @@ canvas {
    tap target — tapping it is the same as pressing E */
 .touch #prompt {
   bottom: auto;
-  top: calc(96px + env(safe-area-inset-top));
+  top: calc(62px + env(safe-area-inset-top));
   max-width: 92vw;
   white-space: normal;
   text-align: center;
@@ -885,6 +885,71 @@ select,
   white-space: nowrap;
 }
 
+/* ----- touch: the topbar pills collapse behind one ☰ button ----- */
+#menuBtn {
+  display: none; /* desktop shows the pills directly */
+}
+.touch #menuBtn {
+  display: grid;
+  place-items: center;
+  position: relative;
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid rgba(241, 230, 210, 0.3);
+  color: var(--cream);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+.touch #menuBtn .badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--vermilion);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 9px;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  padding: 0 4px;
+}
+.touch #topbar {
+  left: auto;
+  right: calc(10px + env(safe-area-inset-right));
+  top: calc(8px + env(safe-area-inset-top));
+  flex-wrap: nowrap;
+}
+.touch #topbar:not(.open) > *:not(#menuBtn) {
+  display: none;
+}
+.touch #topbar.open {
+  z-index: 46;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  background: rgba(20, 14, 9, 0.94);
+  border: 1px solid rgba(241, 230, 210, 0.16);
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+.touch #topbar.open #menuBtn {
+  align-self: flex-end;
+  width: 38px;
+  height: 38px;
+}
+.touch #topbar.open > * {
+  text-align: center;
+}
+.touch #topbar.open #venueClock {
+  justify-content: center;
+}
+
 /* venue world-time pill — the same hour for everyone (UTC), see lib/bar/clock.ts */
 #venueClock {
   align-self: center;
@@ -1111,6 +1176,16 @@ select,
 .touch #hint {
   display: none; /* keyboard hints mean nothing to a thumb */
 }
+.touch #onAirBanner {
+  top: calc(58px + env(safe-area-inset-top));
+  max-width: 94vw;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.touch #addedDrawer {
+  top: calc(58px + env(safe-area-inset-top));
+  right: 10px;
+}
 
 /* mobile */
 #stick {
@@ -1167,9 +1242,81 @@ select,
 .touch canvas {
   cursor: default;
 }
-/* on touch, lift the now-playing card clear of the joystick (stick top ≈ 134px) */
+/* ----- touch: now-playing is a slim mini-bar pinned top; tap to expand ----- */
 .touch #np {
-  bottom: calc(150px + env(safe-area-inset-bottom));
+  top: calc(8px + env(safe-area-inset-top));
+  bottom: auto;
+  left: 10px;
+  right: calc(62px + env(safe-area-inset-right)); /* leave the corner to ☰ */
+  width: auto;
+  max-width: none;
+  border-radius: 12px;
+}
+.touch #np.hidden {
+  transform: translateY(-160%);
+}
+.touch #npHead {
+  cursor: pointer;
+}
+/* collapsed: one compact row + a 2px progress line */
+.touch #np:not(.open) #npHead {
+  padding: 6px 10px;
+  gap: 8px;
+}
+.touch #np:not(.open) .disc {
+  width: 26px;
+  height: 26px;
+}
+.touch #np:not(.open) #npLabel,
+.touch #np:not(.open) #npSrc,
+.touch #np:not(.open) #cue,
+.touch #np:not(.open) #justAdded,
+.touch #np:not(.open) #npCtl {
+  display: none;
+}
+.touch #np:not(.open) #npTitle {
+  font-size: 12px;
+  margin: 0;
+}
+.touch #np:not(.open) #npArtist {
+  font-size: 9px;
+}
+.touch #np:not(.open) #bar {
+  margin: 6px 0 0;
+  height: 2px;
+  border-radius: 0;
+}
+/* expanded: the full card drops over the top of the screen */
+.touch #np.open {
+  right: 10px;
+  z-index: 46;
+}
+.touch #np.open .mbtn.act {
+  display: none; /* the full controls row takes over */
+}
+#npMini {
+  display: none; /* desktop never shows the quick controls */
+}
+.touch #npMini {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+.touch .mbtn {
+  background: transparent;
+  border: 1px solid rgba(241, 230, 210, 0.26);
+  color: var(--cream);
+  border-radius: 8px;
+  padding: 7px 9px;
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+.touch .mbtn:disabled {
+  opacity: 0.4;
 }
 
 /* ----- small screens (phones) ----- */
