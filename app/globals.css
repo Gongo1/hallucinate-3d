@@ -1,0 +1,1376 @@
+/* Ported from prototype.html. Audio-only build: the video stage is gone; the
+   now-playing card shows a spinning disc instead. */
+
+:root {
+  --bg: #120d08;
+  --wood: #caa472;
+  --wood-d: #7c5734;
+  --wood-dd: #4f3720;
+  --shoji: #f3e6c8;
+  --cream: #f1e6d2;
+  --ink: #1a120a;
+  --indigo: #3b5e96;
+  --vermilion: #d6452f;
+  --moss: #7e9b5e;
+  --lantern: #ffb35e;
+  --panel: rgba(26, 18, 11, 0.9);
+}
+
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+html,
+body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  overflow: hidden;
+  font-family: "DM Mono", monospace;
+  color: var(--cream);
+  /* no pull-to-refresh / rubber-banding under the game */
+  overscroll-behavior: none;
+}
+#wrap {
+  position: fixed;
+  inset: 0;
+}
+canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  /* the canvas owns its touches: no scroll, no double-tap zoom, no long-press callout */
+  touch-action: none;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* intro copy variants — body.touch is set from matchMedia(pointer:coarse) */
+.touchOnly {
+  display: none;
+}
+.touch .touchOnly {
+  display: inline;
+}
+.touch .deskOnly {
+  display: none;
+}
+
+/* hidden audio players (audio only — no visible video) */
+#bar-players {
+  position: fixed;
+  left: -9999px;
+  top: 0;
+  width: 320px;
+  height: 180px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* now playing */
+#np {
+  position: fixed;
+  left: 14px;
+  bottom: 14px;
+  width: 322px;
+  max-width: 64vw;
+  background: var(--panel);
+  border: 1px solid rgba(255, 179, 94, 0.32);
+  border-radius: 14px;
+  backdrop-filter: blur(9px);
+  box-shadow: 0 16px 46px rgba(0, 0, 0, 0.6);
+  overflow: hidden;
+  transition: transform 0.3s ease, opacity 0.3s ease;
+  z-index: 30;
+}
+#np.hidden {
+  transform: translateY(140%);
+  opacity: 0;
+  pointer-events: none;
+}
+#npHead {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 13px 13px 0;
+}
+.disc {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background: repeating-radial-gradient(
+    circle at center,
+    #111 0 2px,
+    #1c1c1c 2px 4px
+  );
+  position: relative;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+}
+.disc::after {
+  content: "";
+  position: absolute;
+  inset: 40%;
+  border-radius: 50%;
+  background: var(--lantern);
+}
+.disc.spin {
+  animation: spin 2.4s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+#npMeta {
+  min-width: 0;
+}
+#npLabel {
+  font-size: 8px;
+  letter-spacing: 0.34em;
+  color: var(--lantern);
+  opacity: 0.9;
+}
+#npTitle {
+  font-family: "Anton", sans-serif;
+  font-size: 17px;
+  line-height: 1.06;
+  margin: 3px 0 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#npArtist {
+  font-size: 11px;
+  opacity: 0.72;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#npSrc {
+  font-size: 8px;
+  letter-spacing: 0.18em;
+  opacity: 0.55;
+  margin-top: 4px;
+}
+#bar {
+  height: 3px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  margin: 11px 13px 0;
+  overflow: hidden;
+}
+#barFill {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, var(--vermilion), var(--lantern));
+  transition: width 0.4s linear;
+}
+
+/* the shared cue — what's selected to play next, visible to everyone */
+#cue {
+  margin: 9px 13px 0;
+  border-top: 1px solid rgba(241, 230, 210, 0.1);
+  padding-top: 8px;
+}
+#cueHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 8px;
+  letter-spacing: 0.24em;
+  color: var(--lantern);
+  opacity: 0.85;
+  margin-bottom: 5px;
+}
+.cueClear {
+  background: transparent;
+  border: 1px solid rgba(214, 69, 47, 0.5);
+  color: var(--vermilion);
+  filter: brightness(1.3);
+  border-radius: 6px;
+  padding: 2px 7px;
+  font-family: "DM Mono", monospace;
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  cursor: pointer;
+}
+.cueClear:hover {
+  background: rgba(214, 69, 47, 0.16);
+}
+#cueList {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.cueItem {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  opacity: 0.82;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.cueDot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+.cueText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cueMore {
+  font-size: 9px;
+  opacity: 0.5;
+  margin-top: 1px;
+}
+.cueItem .cueX {
+  margin-left: auto;
+  background: none;
+  border: 0;
+  color: var(--cream);
+  opacity: 0.4;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 0 2px;
+}
+.cueItem .cueX:hover {
+  opacity: 1;
+  color: var(--vermilion);
+}
+
+/* "just added" line — the third of now / up-next / just-added */
+#justAdded {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 7px 13px 0;
+  padding-top: 7px;
+  border-top: 1px solid rgba(241, 230, 210, 0.08);
+  font-size: 11px;
+  opacity: 0.75;
+  white-space: nowrap;
+  overflow: hidden;
+}
+#justAdded .cueText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.cbtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* topbar: added board button + unseen badge */
+#addedBtn {
+  position: relative;
+  background: var(--panel);
+  border: 1px solid rgba(126, 155, 94, 0.5);
+  color: var(--cream);
+  border-radius: 10px;
+  padding: 7px 12px;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+}
+#addedBtn:hover {
+  border-color: var(--moss);
+}
+#addedBtn .badge {
+  position: absolute;
+  top: -7px;
+  right: -7px;
+  background: var(--vermilion);
+  color: #fff;
+  border-radius: 999px;
+  font-size: 9px;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  padding: 0 4px;
+}
+
+/* added board drawer (top-right, under the topbar) */
+#addedDrawer {
+  position: fixed;
+  top: 52px;
+  right: 14px;
+  width: min(320px, 86vw);
+  max-height: 64vh;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid rgba(126, 155, 94, 0.4);
+  border-radius: 12px;
+  z-index: 45;
+  box-shadow: 0 16px 46px rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(9px);
+  animation: rise 0.22s ease;
+}
+#addedHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 11px 13px;
+  font-size: 9px;
+  letter-spacing: 0.22em;
+  color: var(--moss);
+  filter: brightness(1.3);
+  border-bottom: 1px solid rgba(241, 230, 210, 0.1);
+}
+.addedClose {
+  cursor: pointer;
+  opacity: 0.6;
+}
+.addedClose:hover {
+  opacity: 1;
+}
+.addedEmpty {
+  padding: 18px 13px;
+  font-size: 11px;
+  opacity: 0.5;
+}
+#addedList {
+  display: flex;
+  flex-direction: column;
+}
+.addedItem {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px 13px;
+  border-bottom: 1px solid rgba(241, 230, 210, 0.06);
+}
+.addedMeta {
+  min-width: 0;
+  flex: 1;
+}
+.addedTitle {
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.addedAgo {
+  font-size: 9px;
+  opacity: 0.5;
+  margin-top: 1px;
+}
+.addedCue {
+  flex: 0 0 auto;
+  background: transparent;
+  border: 1px solid rgba(126, 155, 94, 0.5);
+  color: var(--moss);
+  filter: brightness(1.3);
+  border-radius: 8px;
+  padding: 5px 9px;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+.addedCue:hover {
+  background: rgba(126, 155, 94, 0.14);
+}
+.addedCue:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+#npCtl {
+  display: flex;
+  gap: 6px;
+  padding: 9px 13px 12px;
+  align-items: center;
+}
+.cbtn {
+  background: transparent;
+  color: var(--cream);
+  border: 1px solid rgba(241, 230, 210, 0.26);
+  border-radius: 8px;
+  padding: 6px 9px;
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  cursor: pointer;
+}
+.cbtn:hover {
+  border-color: var(--lantern);
+  color: var(--lantern);
+}
+.cbtn.on {
+  border-color: var(--lantern);
+  color: var(--lantern);
+  background: rgba(255, 179, 94, 0.12);
+}
+#npLink {
+  margin-left: auto;
+  font-size: 9px;
+  color: var(--indigo);
+  filter: brightness(1.5);
+  text-decoration: none;
+  letter-spacing: 0.05em;
+}
+#npLink:hover {
+  text-decoration: underline;
+}
+
+/* proximity prompt */
+#prompt {
+  position: fixed;
+  left: 50%;
+  bottom: 24px;
+  transform: translateX(-50%) translateY(18px);
+  background: var(--panel);
+  border: 1px solid rgba(126, 155, 94, 0.5);
+  border-radius: 999px;
+  padding: 9px 18px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  opacity: 0;
+  transition: opacity 0.18s, transform 0.18s;
+  pointer-events: none;
+  z-index: 25;
+  white-space: nowrap;
+  box-shadow: 0 10px 32px rgba(0, 0, 0, 0.5);
+}
+#prompt.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+#prompt b {
+  color: var(--moss);
+  filter: brightness(1.3);
+}
+/* on touch the prompt moves up top (clear of the stick + cards) and becomes a
+   tap target — tapping it is the same as pressing E */
+.touch #prompt {
+  bottom: auto;
+  top: calc(96px + env(safe-area-inset-top));
+  max-width: 92vw;
+  white-space: normal;
+  text-align: center;
+  pointer-events: auto;
+  cursor: pointer;
+  transform: translateX(-50%) translateY(-10px);
+}
+.touch #prompt.show {
+  transform: translateX(-50%) translateY(0);
+}
+
+/* mobile autoplay was blocked — the one-tap unlock. Center stage on purpose:
+   without this tap there is no sound at all. */
+#tapSound {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 55;
+  background: var(--panel);
+  color: var(--lantern);
+  border: 1px solid rgba(255, 179, 94, 0.65);
+  border-radius: 999px;
+  padding: 16px 26px;
+  font-family: "DM Mono", monospace;
+  font-size: 14px;
+  letter-spacing: 0.12em;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 0 0 0 rgba(255, 179, 94, 0.35), 0 18px 50px rgba(0, 0, 0, 0.6);
+  animation: soundPulse 1.7s infinite;
+}
+@keyframes soundPulse {
+  50% {
+    box-shadow: 0 0 0 16px rgba(255, 179, 94, 0), 0 18px 50px rgba(0, 0, 0, 0.6);
+  }
+}
+.key {
+  display: inline-block;
+  border: 1px solid rgba(241, 230, 210, 0.5);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 10px;
+  margin: 0 3px;
+}
+
+/* overlays (crate + ingest share styling) */
+.overlay {
+  position: fixed;
+  inset: 0;
+  display: none;
+  place-items: center;
+  z-index: 40;
+  background: radial-gradient(
+    ellipse at center,
+    rgba(24, 16, 9, 0.74),
+    rgba(8, 5, 3, 0.94)
+  );
+}
+.overlay.open {
+  display: grid;
+}
+.ovClose {
+  position: absolute;
+  top: 18px;
+  right: 22px;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--cream);
+  opacity: 0.6;
+  cursor: pointer;
+  z-index: 2;
+}
+.ovClose:hover {
+  opacity: 1;
+}
+
+/* crate flip */
+#crateBox {
+  width: min(440px, 92vw);
+  text-align: center;
+  animation: rise 0.3s ease;
+}
+@keyframes rise {
+  from {
+    transform: translateY(16px);
+    opacity: 0;
+  }
+  to {
+    transform: none;
+    opacity: 1;
+  }
+}
+#crateGenre {
+  font-family: "Shippori Mincho", serif;
+  font-size: 15px;
+  letter-spacing: 0.12em;
+}
+#sleeveWrap {
+  margin: 18px auto 8px;
+  width: 236px;
+  height: 236px;
+  perspective: 900px;
+}
+#sleeve {
+  width: 100%;
+  height: 100%;
+  border-radius: 5px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 22px 56px rgba(0, 0, 0, 0.6);
+  transition: transform 0.2s ease;
+  display: grid;
+  place-items: center;
+}
+#sleeve .vinyl {
+  position: absolute;
+  right: -56px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 196px;
+  height: 196px;
+  border-radius: 50%;
+  background: repeating-radial-gradient(
+    circle at center,
+    #111 0 2px,
+    #1c1c1c 2px 4px
+  );
+}
+#sleeve .vinyl::after {
+  content: "";
+  position: absolute;
+  inset: 42%;
+  border-radius: 50%;
+  background: var(--lantern);
+}
+#sleeve .num {
+  position: absolute;
+  top: 10px;
+  left: 12px;
+  font-family: "Anton", sans-serif;
+  font-size: 13px;
+  opacity: 0.5;
+}
+#sleeve .big {
+  font-family: "Anton", sans-serif;
+  font-size: 30px;
+  line-height: 0.95;
+  padding: 0 18px;
+  z-index: 2;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+}
+#sleeveArtist {
+  font-size: 13px;
+  opacity: 0.85;
+  margin-top: 12px;
+}
+#sleeveTitle {
+  font-family: "Anton", sans-serif;
+  font-size: 20px;
+  margin-top: 2px;
+}
+#crateNav {
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+  align-items: center;
+  margin-top: 16px;
+}
+.navbtn {
+  background: transparent;
+  border: 1px solid rgba(241, 230, 210, 0.3);
+  color: var(--cream);
+  width: 42px;
+  height: 42px;
+  border-radius: 50%;
+  font-size: 18px;
+  cursor: pointer;
+}
+.navbtn:hover {
+  border-color: var(--lantern);
+  color: var(--lantern);
+}
+#playBtn {
+  background: var(--lantern);
+  color: var(--ink);
+  border: 0;
+  border-radius: 999px;
+  padding: 13px 26px;
+  font-family: "Anton", sans-serif;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(255, 179, 94, 0.36);
+}
+#crateMeta {
+  font-size: 10px;
+  opacity: 0.55;
+  margin-top: 13px;
+  letter-spacing: 0.18em;
+}
+#playShelf {
+  margin-top: 14px;
+  font-size: 11px;
+  color: var(--moss);
+  filter: brightness(1.3);
+  background: none;
+  border: 0;
+  cursor: pointer;
+  letter-spacing: 0.06em;
+}
+
+/* ingest panel */
+#ingestBox {
+  width: min(560px, 93vw);
+  max-height: 88vh;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid rgba(214, 69, 47, 0.4);
+  border-radius: 16px;
+  padding: 24px;
+  animation: rise 0.3s ease;
+}
+#ingestBox h2 {
+  font-family: "Shippori Mincho", serif;
+  font-weight: 800;
+  margin: 0 0 4px;
+  font-size: 22px;
+}
+#ingestBox .sub {
+  font-size: 11px;
+  opacity: 0.6;
+  margin-bottom: 16px;
+  line-height: 1.6;
+}
+#ingestBox textarea {
+  width: 100%;
+  height: 130px;
+  resize: vertical;
+  background: #0e0a06;
+  border: 1px solid rgba(241, 230, 210, 0.18);
+  border-radius: 9px;
+  color: var(--cream);
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  padding: 11px;
+  line-height: 1.55;
+}
+#ingestBox textarea::placeholder {
+  color: rgba(241, 230, 210, 0.32);
+}
+.row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+select,
+#newName,
+#newColor {
+  background: #0e0a06;
+  border: 1px solid rgba(241, 230, 210, 0.2);
+  color: var(--cream);
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+}
+#newColor {
+  padding: 4px;
+  width: 42px;
+  height: 36px;
+}
+.btn {
+  background: var(--vermilion);
+  color: #fff;
+  border: 0;
+  border-radius: 9px;
+  padding: 9px 16px;
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+.btn.ghost {
+  background: transparent;
+  border: 1px solid rgba(241, 230, 210, 0.28);
+  color: var(--cream);
+}
+.btn:hover {
+  filter: brightness(1.08);
+}
+#ingestLog {
+  font-size: 11px;
+  margin-top: 14px;
+  line-height: 1.7;
+  max-height: 140px;
+  overflow: auto;
+}
+#ingestLog .ok {
+  color: var(--moss);
+  filter: brightness(1.3);
+}
+#ingestLog .no {
+  color: var(--vermilion);
+  filter: brightness(1.25);
+}
+#exportArea {
+  width: 100%;
+  height: 96px;
+  margin-top: 10px;
+  background: #0e0a06;
+  border: 1px solid rgba(241, 230, 210, 0.18);
+  border-radius: 8px;
+  color: var(--cream);
+  font-family: "DM Mono", monospace;
+  font-size: 10px;
+  padding: 9px;
+}
+
+/* intro */
+#intro {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  background: radial-gradient(ellipse at 50% 42%, #2a1d11, #0a0604 76%);
+  transition: opacity 0.5s ease;
+}
+#intro.gone {
+  opacity: 0;
+  pointer-events: none;
+}
+#intro .glow {
+  position: absolute;
+  width: 140vmax;
+  height: 140vmax;
+  left: 50%;
+  top: 40%;
+  transform: translate(-50%, -50%);
+  background: radial-gradient(circle, rgba(255, 179, 94, 0.13), transparent 56%);
+}
+#introInner {
+  text-align: center;
+  position: relative;
+  padding: 20px;
+}
+#kanji {
+  font-family: "Shippori Mincho", serif;
+  font-size: clamp(28px, 5vw, 46px);
+  color: var(--vermilion);
+  letter-spacing: 0.3em;
+  opacity: 0.92;
+  text-shadow: 0 0 24px rgba(214, 69, 47, 0.4);
+}
+#title {
+  font-family: "Shippori Mincho", serif;
+  font-weight: 800;
+  font-size: clamp(38px, 8vw, 72px);
+  color: var(--lantern);
+  letter-spacing: 0.04em;
+  text-shadow: 0 0 22px rgba(255, 179, 94, 0.55);
+  margin-top: 6px;
+}
+#sub {
+  font-size: 11px;
+  letter-spacing: 0.5em;
+  opacity: 0.78;
+  margin-top: 8px;
+}
+#enter {
+  margin-top: 30px;
+  font-size: 12px;
+  letter-spacing: 0.24em;
+  opacity: 0.85;
+  animation: pulse 1.8s infinite;
+}
+@keyframes pulse {
+  50% {
+    opacity: 0.3;
+  }
+}
+#howto {
+  margin-top: 26px;
+  font-size: 11px;
+  opacity: 0.5;
+  line-height: 1.95;
+}
+
+#topbar {
+  position: fixed;
+  right: 14px;
+  top: 12px;
+  z-index: 20;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+#addBtn {
+  background: var(--panel);
+  border: 1px solid rgba(214, 69, 47, 0.5);
+  color: var(--cream);
+  border-radius: 10px;
+  padding: 7px 12px;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+}
+#addBtn:hover {
+  border-color: var(--vermilion);
+  color: #fff;
+}
+#hint {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  opacity: 0.4;
+  text-align: right;
+  line-height: 1.7;
+}
+#roster {
+  align-self: center;
+  background: var(--panel);
+  border: 1px solid rgba(126, 155, 94, 0.5);
+  color: var(--cream);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
+/* venue world-time pill — the same hour for everyone (UTC), see lib/bar/clock.ts */
+#venueClock {
+  align-self: center;
+  background: var(--panel);
+  border: 1px solid rgba(59, 94, 150, 0.55);
+  color: var(--cream);
+  border-radius: 999px;
+  padding: 7px 12px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+#venueClock .vcGlyph {
+  color: var(--lantern);
+  font-size: 13px;
+  line-height: 1;
+}
+#venueClock .vcTime {
+  opacity: 0.55;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+}
+
+/* lobby: chat + reactions (bottom-right) */
+#lobby {
+  position: fixed;
+  right: 14px;
+  bottom: 14px;
+  width: min(300px, 80vw);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+#lobby > * {
+  pointer-events: auto;
+}
+#chatLog {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  max-height: 38vh;
+  overflow: hidden;
+  justify-content: flex-end;
+}
+.chatMsg {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  background: var(--panel);
+  border: 1px solid rgba(241, 230, 210, 0.12);
+  border-radius: 9px;
+  padding: 6px 10px;
+  font-size: 12px;
+  line-height: 1.4;
+  width: fit-content;
+  max-width: 100%;
+  animation: rise 0.25s ease;
+  word-break: break-word;
+}
+.chatDot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  align-self: center;
+}
+.chatText {
+  min-width: 0;
+}
+#reactRow {
+  display: flex;
+  gap: 5px;
+}
+.reactBtn {
+  background: var(--panel);
+  border: 1px solid rgba(241, 230, 210, 0.16);
+  border-radius: 9px;
+  padding: 4px 8px;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.reactBtn:hover {
+  border-color: var(--lantern);
+  transform: translateY(-1px);
+}
+#chatForm {
+  display: flex;
+  gap: 6px;
+}
+#chatInput {
+  flex: 1;
+  min-width: 0;
+  background: var(--panel);
+  border: 1px solid rgba(241, 230, 210, 0.2);
+  color: var(--cream);
+  border-radius: 9px;
+  padding: 9px 11px;
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+}
+#chatInput::placeholder {
+  color: rgba(241, 230, 210, 0.32);
+}
+#chatInput:focus {
+  outline: none;
+  border-color: var(--lantern);
+}
+.chatSend {
+  background: var(--moss);
+  border: 0;
+  color: var(--ink);
+  border-radius: 9px;
+  width: 38px;
+  font-size: 15px;
+  cursor: pointer;
+}
+
+/* floating emoji reactions */
+#reactStream {
+  position: fixed;
+  right: 40px;
+  bottom: 180px;
+  width: 140px;
+  height: 200px;
+  z-index: 29;
+  pointer-events: none;
+}
+.reactPop {
+  position: absolute;
+  bottom: 0;
+  font-size: 26px;
+  animation: floatUp 2.6s ease-out forwards;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+}
+@keyframes floatUp {
+  0% {
+    transform: translateY(0) scale(0.6);
+    opacity: 0;
+  }
+  18% {
+    transform: translateY(-22px) scale(1.15);
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-170px) scale(0.9);
+    opacity: 0;
+  }
+}
+
+/* ----- touch layout: chat collapses behind a 💬 toggle ----- */
+#chatToggle {
+  display: none; /* desktop: lobby is always expanded */
+}
+.touch #chatToggle {
+  display: grid;
+  place-items: center;
+  position: fixed;
+  right: calc(20px + env(safe-area-inset-right));
+  bottom: calc(118px + env(safe-area-inset-bottom));
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid rgba(241, 230, 210, 0.3);
+  color: var(--cream);
+  font-size: 19px;
+  line-height: 1;
+  z-index: 36;
+  cursor: pointer;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+.touch #lobby:not(.open) #chatForm,
+.touch #lobby:not(.open) #reactRow {
+  display: none;
+}
+.touch #lobby {
+  right: 12px;
+  bottom: calc(180px + env(safe-area-inset-bottom));
+  width: min(240px, 62vw);
+}
+/* open = a proper sheet, opaque over whatever sits behind it */
+.touch #lobby.open {
+  z-index: 36;
+  width: min(320px, 86vw);
+  background: rgba(20, 14, 9, 0.94);
+  border: 1px solid rgba(241, 230, 210, 0.16);
+  border-radius: 14px;
+  padding: 10px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.55);
+}
+.touch #lobby.open .chatMsg {
+  margin-left: 0;
+}
+/* collapsed chat is read-only bubbles — let taps fall through to what's under */
+.touch #chatLog {
+  pointer-events: none;
+}
+.touch .chatMsg {
+  margin-left: auto; /* hug the right edge, clear of the now-playing card */
+}
+.touch #reactStream {
+  right: 16px;
+  bottom: calc(250px + env(safe-area-inset-bottom));
+}
+/* roomier tap targets */
+.touch .cbtn {
+  padding: 9px 12px;
+  font-size: 13px;
+}
+.touch .navbtn {
+  width: 48px;
+  height: 48px;
+}
+.touch .reactBtn {
+  padding: 8px 11px;
+  font-size: 17px;
+}
+.touch #hint {
+  display: none; /* keyboard hints mean nothing to a thumb */
+}
+
+/* mobile */
+#stick {
+  position: fixed;
+  left: calc(18px + env(safe-area-inset-left));
+  bottom: calc(18px + env(safe-area-inset-bottom));
+  width: 116px;
+  height: 116px;
+  z-index: 35;
+  display: none;
+  touch-action: none;
+}
+#stickBase {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: rgba(241, 230, 210, 0.06);
+  border: 1px solid rgba(241, 230, 210, 0.18);
+}
+#stickNub {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 48px;
+  height: 48px;
+  margin: -24px;
+  border-radius: 50%;
+  background: rgba(255, 179, 94, 0.5);
+  border: 1px solid rgba(255, 179, 94, 0.7);
+}
+#actBtn {
+  position: fixed;
+  right: calc(20px + env(safe-area-inset-right));
+  bottom: calc(30px + env(safe-area-inset-bottom));
+  width: 72px;
+  height: 72px;
+  z-index: 35;
+  border-radius: 50%;
+  background: rgba(126, 155, 94, 0.2);
+  border: 2px solid var(--moss);
+  color: var(--moss);
+  font-family: "Anton", sans-serif;
+  font-size: 22px;
+  display: none;
+  place-items: center;
+  touch-action: none;
+}
+.touch #stick {
+  display: block;
+}
+.touch #actBtn {
+  display: grid;
+}
+.touch canvas {
+  cursor: default;
+}
+/* on touch, lift the now-playing card clear of the joystick (stick top ≈ 134px) */
+.touch #np {
+  bottom: calc(150px + env(safe-area-inset-bottom));
+}
+
+/* ----- small screens (phones) ----- */
+@media (max-width: 720px) {
+  #topbar {
+    left: 10px;
+    right: 10px;
+    top: calc(8px + env(safe-area-inset-top));
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    row-gap: 6px;
+  }
+  #hint {
+    display: none;
+  }
+  #venueClock,
+  #roster,
+  #addBtn,
+  #addedBtn {
+    padding: 6px 10px;
+    font-size: 10px;
+  }
+  #onAirBanner {
+    top: calc(92px + env(safe-area-inset-top));
+    max-width: 94vw;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #addedDrawer {
+    top: calc(96px + env(safe-area-inset-top));
+    right: 10px;
+  }
+  #np {
+    left: 10px;
+    width: min(310px, calc(100vw - 20px));
+    max-width: none;
+  }
+  #ingestBox {
+    padding: 18px;
+    max-height: 80vh;
+  }
+}
+
+/* ----- ON AIR banner (god mode, Part 3) ----- */
+#onAirBanner {
+  position: fixed;
+  top: 54px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 28;
+  background: rgba(40, 8, 8, 0.92);
+  border: 1px solid rgba(255, 60, 60, 0.6);
+  color: #ff9a9a;
+  border-radius: 999px;
+  padding: 7px 16px;
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+  box-shadow: 0 8px 30px rgba(180, 20, 20, 0.35);
+  animation: rise 0.3s ease;
+}
+
+/* ----- the booth (/booth) ----- */
+.boothWrap {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: radial-gradient(ellipse at 50% 38%, #1a1226, #08060c 78%);
+  font-family: "DM Mono", monospace;
+  color: var(--cream);
+  padding: 20px;
+}
+.boothCard {
+  width: min(360px, 92vw);
+  background: rgba(20, 16, 28, 0.92);
+  border: 1px solid rgba(160, 90, 255, 0.4);
+  border-radius: 16px;
+  padding: 26px;
+  text-align: center;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+}
+.boothCard.wide {
+  width: min(440px, 94vw);
+  text-align: left;
+}
+.boothTitle {
+  font-family: "Anton", sans-serif;
+  font-size: 22px;
+  letter-spacing: 0.12em;
+  color: #d9a8ff;
+}
+.boothSub {
+  font-size: 10px;
+  opacity: 0.6;
+  letter-spacing: 0.1em;
+  margin: 4px 0 16px;
+}
+.boothInput {
+  width: 100%;
+  background: #0e0a16;
+  border: 1px solid rgba(241, 230, 210, 0.2);
+  color: var(--cream);
+  border-radius: 9px;
+  padding: 11px;
+  font-family: "DM Mono", monospace;
+  font-size: 13px;
+  margin-bottom: 10px;
+}
+.boothInput:focus {
+  outline: none;
+  border-color: #a05aff;
+}
+.boothBtn {
+  background: rgba(160, 90, 255, 0.12);
+  border: 1px solid rgba(160, 90, 255, 0.5);
+  color: #d9a8ff;
+  border-radius: 9px;
+  padding: 11px 14px;
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+.boothBtn:hover {
+  background: rgba(160, 90, 255, 0.22);
+}
+.boothBtn.primary {
+  width: 100%;
+  background: #7b3ff2;
+  color: #fff;
+  border: 0;
+}
+.boothBtn.on {
+  background: rgba(160, 90, 255, 0.3);
+  border-color: #d9a8ff;
+}
+.boothBtn.onair.on {
+  background: rgba(220, 40, 40, 0.25);
+  border-color: #ff5a5a;
+  color: #ff9a9a;
+}
+.boothBtn.ghost {
+  background: transparent;
+  border-color: rgba(241, 230, 210, 0.25);
+  color: var(--cream);
+}
+.boothGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 12px 0;
+}
+.boothPin {
+  border-top: 1px solid rgba(241, 230, 210, 0.12);
+  margin-top: 14px;
+  padding-top: 14px;
+}
+.boothMsg {
+  font-size: 11px;
+  opacity: 0.85;
+  margin-top: 10px;
+  color: #c8a8ff;
+}
+.boothRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 16px;
+}
+.boothBack {
+  font-size: 11px;
+  color: rgba(241, 230, 210, 0.6);
+  text-decoration: none;
+}
+.boothBack:hover {
+  color: var(--cream);
+}
+
+/* ---- Sombra continuity (subdomain crossing) ---- */
+#presents {
+  font-size: 10px;
+  letter-spacing: 0.34em;
+  color: var(--color-terracotta, #c97e5d);
+  opacity: 0.75;
+  margin-bottom: 10px;
+}
+#sombraDoor {
+  background: var(--panel);
+  border: 1px solid rgba(201, 126, 93, 0.5);
+  color: #e9c39a;
+  border-radius: 10px;
+  padding: 7px 11px;
+  font-size: 13px;
+  text-decoration: none;
+  letter-spacing: 0.1em;
+  line-height: 1;
+  transition: border-color 0.3s ease, color 0.3s ease, text-shadow 0.3s ease;
+}
+#sombraDoor:hover {
+  border-color: #c97e5d;
+  color: #fff;
+  text-shadow: 0 0 12px rgba(201, 126, 93, 0.7);
+}
