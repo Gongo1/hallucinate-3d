@@ -16,6 +16,17 @@ import { ingestLinks } from "@/app/actions/ingest";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { shade } from "@/lib/bar/color";
 import { phaseAt } from "@/lib/bar/clock";
+import {
+  loadFit,
+  saveFit,
+  randomFit,
+  SKINS,
+  OUTFITS,
+  HAIRS,
+  HATS,
+  hatLabel,
+  type Fit,
+} from "@/lib/bar/fits";
 import type { Shelf, Track } from "@/lib/bar/types";
 
 /** one row on the live "Added" board */
@@ -144,6 +155,13 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
   const [ingestOpen, setIngestOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false); // touch: chat behind a 💬 toggle
   const [menuOpen, setMenuOpen] = useState(false); // touch: topbar pills behind ☰
+  const [fitOpen, setFitOpen] = useState(false); // the fit-customiser overlay
+  // the local listener's look. null until the mount effect reads localStorage
+  // (avoids an SSR/Math.random hydration mismatch); the engine/presence own the
+  // live copy, this state just drives the panel + preview.
+  const [fit, setFit] = useState<Fit | null>(null);
+  const fitRef = useRef<Fit | null>(null);
+  fitRef.current = fit;
 
   // ----- lobby (Supabase Realtime presence) -----
   const [roster, setRoster] = useState(0);
@@ -302,10 +320,18 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
     // the intro tap — mobile audio must start inside that tap, synchronously.
     player.init();
 
+    // resolve the saved look now (client-only — localStorage), or roll a fresh
+    // one. Seed the engine + the panel state, and hand it to presence so the
+    // first broadcast already carries the right fit.
+    const initialFit = loadFit() ?? randomFit();
+    setFit(initialFit);
+    engine.setPlayerFit(initialFit);
+
     // Join the lobby channel immediately, but only LURKING (not tracked as
     // present, so no ghost listeners): by the time the user taps to enter, the
     // current track + offset are already known and playable in-gesture.
     const presence: BarPresence = new BarPresence({
+      fit: initialFit,
       getPose: () =>
         engineRef.current?.getPlayerPose() ?? { x: 570, y: 470, dir: 1 },
       onRoster: (n) => setRoster(n),
@@ -480,6 +506,15 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
     playerRef.current?.tapToListen(offset);
   }, []);
 
+  // change the local look: persist it, repaint the player avatar, and re-broadcast
+  // so everyone else re-renders this listener with the new fit (live).
+  const applyFit = useCallback((f: Fit) => {
+    setFit(f);
+    saveFit(f);
+    engineRef.current?.setPlayerFit(f);
+    presenceRef.current?.setFit(f);
+  }, []);
+
   // ----- chat / reactions -----
   const sendChat = useCallback((text: string) => {
     presenceRef.current?.sendChat(text);
@@ -598,6 +633,18 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
         >
           ＋ 新着 add records
         </button>
+        {started && (
+          <button
+            id="fitBtn"
+            onClick={() => {
+              setFitOpen(true);
+              setMenuOpen(false);
+            }}
+            title="customize your look"
+          >
+            ◇ your fit
+          </button>
+        )}
         {/* the worlds connect both ways — a quiet door back to Sombra */}
         <a
           id="sombraDoor"
@@ -677,6 +724,14 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
         />
       )}
 
+      {fitOpen && fit && (
+        <FitPanel
+          fit={fit}
+          onChange={applyFit}
+          onClose={() => setFitOpen(false)}
+        />
+      )}
+
       {started && (
         <Lobby
           chat={chat}
@@ -714,6 +769,17 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           <div id="title">HALLUCINATE</div>
           <div id="sub">ONGAKU KISSA · A LISTENING BAR</div>
           <div id="enter">▸ SLIDE THE DOOR OPEN ◂</div>
+          {fit && (
+            <button
+              id="introFit"
+              onClick={(e) => {
+                e.stopPropagation(); // don't let the tap fall through to "enter"
+                setFitOpen(true);
+              }}
+            >
+              <AvatarPreview fit={fit} size={20} /> ◇ customize your fit
+            </button>
+          )}
           <div id="howto">
             <span className="deskOnly">
               <span className="key">WASD</span> walk &nbsp;·&nbsp;{" "}
@@ -1258,6 +1324,205 @@ function AddedBoard({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------ fit */
+// A front-facing SVG echo of engine.person — head (skin), body (outfit), hair,
+// and the hat. Used for the live preview + the swatch chips.
+function AvatarPreview({ fit, size = 96 }: { fit: Fit; size?: number }) {
+  const covers = fit.hat === "beanie" || fit.hat === "cap";
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 60 60"
+      style={{ display: "block", flex: "0 0 auto" }}
+      aria-hidden="true"
+    >
+      {/* floating shadow */}
+      <ellipse cx="30" cy="52" rx="12" ry="3.5" fill="rgba(0,0,0,.28)" />
+      {/* body */}
+      <rect x="20" y="30" width="20" height="22" rx="7" fill={fit.body} />
+      {/* head */}
+      <circle cx="30" cy="24" r="9" fill={fit.skin} />
+      {/* hair (unless a cap/beanie covers it) */}
+      {!covers && (
+        <path d="M21 24 A9 9 0 0 1 39 24 L39 22 L21 22 Z" fill={fit.hair} />
+      )}
+      {/* eyes */}
+      <circle cx="27" cy="24" r="1.3" fill="#1a130d" />
+      <circle cx="33" cy="24" r="1.3" fill="#1a130d" />
+      {/* hat */}
+      {fit.hat === "cap" && (
+        <g fill={fit.body}>
+          <path d="M21 21 A9 9 0 0 1 39 21 L39 22 L21 22 Z" />
+          <rect x="38" y="21" width="9" height="3" rx="1.5" />
+        </g>
+      )}
+      {fit.hat === "beanie" && (
+        <g>
+          <path d="M20 22 A10 10 0 0 1 40 22 L40 24 L20 24 Z" fill="#7a4a3a" />
+          <rect x="20" y="22" width="20" height="3.5" fill="rgba(255,255,255,.2)" />
+        </g>
+      )}
+      {fit.hat === "flower" && (
+        <g>
+          {[0, 1, 2, 3, 4].map((i) => {
+            const a = (i / 5) * Math.PI * 2;
+            return (
+              <circle
+                key={i}
+                cx={39 + Math.cos(a) * 3}
+                cy={17 + Math.sin(a) * 3}
+                r="2.4"
+                fill="#e7708f"
+              />
+            );
+          })}
+          <circle cx="39" cy="17" r="2" fill="#ffd76a" />
+        </g>
+      )}
+      {fit.hat === "halo" && (
+        <ellipse
+          cx="30"
+          cy="13"
+          rx="9"
+          ry="3"
+          fill="none"
+          stroke="#ffe082"
+          strokeWidth="2.2"
+        />
+      )}
+      {fit.hat === "phones" && (
+        <g>
+          <path
+            d="M21 22 A9 9 0 0 1 39 22"
+            fill="none"
+            stroke="#23232a"
+            strokeWidth="2.4"
+          />
+          <rect x="18" y="22" width="4" height="7" rx="1.5" fill="#2c2c34" />
+          <rect x="38" y="22" width="4" height="7" rx="1.5" fill="#2c2c34" />
+        </g>
+      )}
+    </svg>
+  );
+}
+
+function Swatch({
+  color,
+  on,
+  onClick,
+}: {
+  color: string;
+  on: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      className={"swatch" + (on ? " on" : "")}
+      style={{ background: color }}
+      onClick={onClick}
+      aria-label={color}
+    />
+  );
+}
+
+function FitPanel({
+  fit,
+  onChange,
+  onClose,
+}: {
+  fit: Fit;
+  onChange: (f: Fit) => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      id="fitOverlay"
+      className="overlay open"
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="ovClose" onClick={onClose}>
+        CLOSE ✕
+      </div>
+      <div id="fitBox">
+        <h2>◇ Your Fit</h2>
+        <div className="sub">
+          How you look to everyone else in the bar. Saved on this device.
+        </div>
+
+        <div id="fitStage">
+          <AvatarPreview fit={fit} size={120} />
+        </div>
+
+        <div className="fitRow">
+          <span className="fitLabel">skin</span>
+          <div className="swatches">
+            {SKINS.map((c) => (
+              <Swatch
+                key={c}
+                color={c}
+                on={fit.skin === c}
+                onClick={() => onChange({ ...fit, skin: c })}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="fitRow">
+          <span className="fitLabel">outfit</span>
+          <div className="swatches">
+            {OUTFITS.map((c) => (
+              <Swatch
+                key={c}
+                color={c}
+                on={fit.body === c}
+                onClick={() => onChange({ ...fit, body: c })}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="fitRow">
+          <span className="fitLabel">hair</span>
+          <div className="swatches">
+            {HAIRS.map((c) => (
+              <Swatch
+                key={c}
+                color={c}
+                on={fit.hair === c}
+                onClick={() => onChange({ ...fit, hair: c })}
+              />
+            ))}
+          </div>
+        </div>
+        <div className="fitRow">
+          <span className="fitLabel">hat</span>
+          <div className="hatRow">
+            {HATS.map((h) => (
+              <button
+                key={h}
+                className={"hatChip" + (fit.hat === h ? " on" : "")}
+                onClick={() => onChange({ ...fit, hat: h })}
+              >
+                {hatLabel(h)}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="fitActions">
+          <button className="btn ghost" onClick={() => onChange(randomFit())}>
+            🎲 randomize
+          </button>
+          <button className="btn" onClick={onClose}>
+            done
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

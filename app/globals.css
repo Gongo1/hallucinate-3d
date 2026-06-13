@@ -771,6 +771,139 @@ select,
   padding: 9px;
 }
 
+/* ----- fit customiser ----- */
+/* above the intro (z 60) so it shows when opened from the door screen */
+#fitOverlay {
+  z-index: 70;
+}
+#fitBox {
+  width: min(420px, 93vw);
+  max-height: 90vh;
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid rgba(126, 155, 94, 0.4);
+  border-radius: 16px;
+  padding: 22px;
+  animation: rise 0.3s ease;
+}
+#fitBox h2 {
+  font-family: "Shippori Mincho", serif;
+  font-weight: 800;
+  margin: 0 0 4px;
+  font-size: 21px;
+}
+#fitBox .sub {
+  font-size: 11px;
+  opacity: 0.6;
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+#fitStage {
+  display: grid;
+  place-items: center;
+  padding: 10px 0 16px;
+  margin-bottom: 6px;
+  background: radial-gradient(
+    ellipse at 50% 60%,
+    rgba(255, 179, 94, 0.12),
+    transparent 68%
+  );
+  border-radius: 12px;
+}
+.fitRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0;
+}
+.fitLabel {
+  flex: 0 0 46px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.swatches,
+.hatRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+.swatch {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid rgba(241, 230, 210, 0.2);
+  cursor: pointer;
+  padding: 0;
+  transition: transform 0.12s ease, border-color 0.12s ease;
+}
+.swatch:hover {
+  transform: scale(1.12);
+}
+.swatch.on {
+  border-color: var(--lantern);
+  box-shadow: 0 0 0 2px rgba(255, 179, 94, 0.4);
+}
+.hatChip {
+  background: transparent;
+  border: 1px solid rgba(241, 230, 210, 0.24);
+  color: var(--cream);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+.hatChip:hover {
+  border-color: var(--lantern);
+}
+.hatChip.on {
+  border-color: var(--lantern);
+  color: var(--lantern);
+  background: rgba(255, 179, 94, 0.12);
+}
+.fitActions {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+/* fit triggers */
+#introFit {
+  margin: 22px auto 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--panel);
+  border: 1px solid rgba(126, 155, 94, 0.45);
+  color: var(--cream);
+  border-radius: 999px;
+  padding: 8px 16px 8px 8px;
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+#introFit:hover {
+  border-color: var(--moss);
+}
+#fitBtn {
+  background: var(--panel);
+  border: 1px solid rgba(126, 155, 94, 0.5);
+  color: var(--cream);
+  border-radius: 10px;
+  padding: 7px 12px;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+}
+#fitBtn:hover {
+  border-color: var(--moss);
+}
+
 /* intro */
 #intro {
   position: fixed;

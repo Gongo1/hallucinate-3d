@@ -45,8 +45,12 @@ export interface RemotePlayer {
   ty: number;
   dir: number;
   bob: number;
-  color: string;
+  color: string; // outfit colour (back-compat name; == fit.body)
   hair: string;
+  /** the rest of this listener's fit (skin + hat). Older clients omit these —
+   *  callers default skin to a mid tone and hat to "none". */
+  skin: string;
+  hat: string;
   /** which venue room this listener is currently in (for per-room avatar render) */
   room: string;
 }

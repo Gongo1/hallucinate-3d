@@ -452,12 +452,15 @@ const LABYRINTH: RoomDef = {
       label: "the archive",
     },
   ],
+  // Spawns sit at OPEN-CELL CENTRES of LAB_GRID (engine.ts) so a centred player
+  // never clips a hedge corner (the bug that froze you at the tea-room entrance).
+  // Verified by flood-fill: tearoom c6r0, rooftop c0r4, archive c8r6.
   spawns: {
-    tearoom: { x: 570, y: 120 },
-    rooftop: { x: WALL + 110, y: 448 },
-    archive: { x: 812, y: ROOM_H - 110 },
+    tearoom: { x: 615, y: 75 },
+    rooftop: { x: 73, y: 447 },
+    archive: { x: 796, y: 633 },
   },
-  defaultSpawn: { x: 570, y: 120 },
+  defaultSpawn: { x: 615, y: 75 },
 };
 
 // The Archive — the deep-history vault. Long stacks, card catalogue, banker's

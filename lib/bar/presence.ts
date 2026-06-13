@@ -8,6 +8,7 @@ import {
   MAX_CUE_LENGTH,
   type FlowLimits,
 } from "./flow";
+import { defaultFit, type Fit } from "./fits";
 
 // The lobby + the SHARED ROOM PLAYER. One Supabase Realtime channel carries
 // several ephemeral streams (no DB tables — additive to the shared sombra
@@ -25,11 +26,6 @@ import {
 // owns the authoritative state and applies everyone's intents, so there's a
 // single source of truth and no conflicting edits.
 
-const PALETTE = [
-  "#b06a52", "#56877e", "#7e6fb0", "#9b7d4e",
-  "#c0432f", "#7e9b5e", "#caa06a", "#5a86a8",
-];
-const HAIRS = ["#2a1c12", "#1b1b22", "#15151a", "#241812", "#1c130b"];
 
 export interface ChatMessage {
   key: string;
@@ -97,6 +93,8 @@ interface Pose {
 }
 
 interface PresenceOpts {
+  /** the local listener's starting fit (from localStorage / a fresh pick) */
+  fit?: Fit;
   getPose: () => Pose;
   onChat: (m: ChatMessage) => void;
   onReact: (r: Reaction) => void;
@@ -111,8 +109,10 @@ interface PresenceOpts {
 
 interface TrackMeta {
   id: string;
-  color: string;
+  color: string; // == fit.body, kept flat for older-client back-compat
   hair: string;
+  skin?: string;
+  hat?: string;
   /** which VENUE ROOM (scenery) this listener is in — for per-room avatar render.
    *  Distinct from RoomState (the shared audio/cue state); presence is venue-wide. */
   vroom?: string;
@@ -120,8 +120,15 @@ interface TrackMeta {
 
 export class BarPresence {
   readonly id: string;
-  readonly color: string;
-  readonly hair: string;
+  /** the local listener's customisable look (skin / outfit / hair / hat) */
+  fit: Fit;
+  /** outfit colour — your cue-dot + chat identity. Tracks fit.body. */
+  get color(): string {
+    return this.fit.body;
+  }
+  get hair(): string {
+    return this.fit.hair;
+  }
   /** live array the engine reads each frame; mutated in place to avoid churn */
   readonly remotes: RemotePlayer[] = [];
 
@@ -156,9 +163,14 @@ export class BarPresence {
       typeof crypto !== "undefined" && crypto.randomUUID
         ? crypto.randomUUID()
         : "g" + Math.random().toString(36).slice(2);
-    const h = this.id.charCodeAt(0) + this.id.charCodeAt(1) + this.id.length;
-    this.color = PALETTE[h % PALETTE.length];
-    this.hair = HAIRS[h % HAIRS.length];
+    // a saved/passed fit wins; else a stable look derived from the id
+    this.fit = opts.fit ?? defaultFit(this.id);
+  }
+
+  /** Change the local look and re-broadcast it so everyone re-renders this avatar. */
+  setFit(fit: Fit) {
+    this.fit = fit;
+    if (this.subscribed) void this.channel?.track(this.myMeta());
   }
 
   start(opts?: { lurk?: boolean }) {
@@ -645,7 +657,14 @@ export class BarPresence {
 
   /* ----------------------------------------------------------- internals */
   private myMeta(): TrackMeta {
-    return { id: this.id, color: this.color, hair: this.hair, vroom: this.venueRoom };
+    return {
+      id: this.id,
+      color: this.fit.body,
+      hair: this.fit.hair,
+      skin: this.fit.skin,
+      hat: this.fit.hat,
+      vroom: this.venueRoom,
+    };
   }
 
   private nextKey() {
@@ -703,6 +722,8 @@ export class BarPresence {
         if (m) {
           r.color = m.color;
           r.hair = m.hair;
+          if (m.skin) r.skin = m.skin;
+          if (m.hat) r.hat = m.hat;
           if (m.vroom) r.room = m.vroom; // keep avatar's room in sync via presence
         }
       } else {
@@ -765,6 +786,8 @@ export class BarPresence {
       bob: 0,
       color: meta?.color ?? "#8a8a8a",
       hair: meta?.hair ?? "#1b1b22",
+      skin: meta?.skin ?? "#cf9268",
+      hat: meta?.hat ?? "none",
       room: meta?.vroom ?? "kissa",
     };
     this.byId.set(id, r);
