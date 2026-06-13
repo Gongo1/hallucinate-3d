@@ -24,7 +24,19 @@ export interface RoomDef {
   name: string;
   /** scene kind the engine switches its background renderer on. "curator" is the
    *  tribute-room template (cosmic lounge), driven by lib/bar/curators.ts data. */
-  scene: "kissa" | "garden" | "omakase" | "berlin" | "tearoom" | "curator";
+  scene:
+    | "kissa"
+    | "garden"
+    | "omakase"
+    | "berlin"
+    | "tearoom"
+    | "curator"
+    | "trattoria"
+    | "playa"
+    | "warehouse"
+    | "rooftop"
+    | "labyrinth"
+    | "archive";
   /** shelf slugs (DB) whose `room` matches this id render here; resolved at runtime */
   doors: RoomDoor[];
   /** where the player stands when they ARRIVE in this room (per incoming door) */
@@ -118,11 +130,22 @@ const GARDEN: RoomDef = {
       facing: "down",
       label: "the cosmos",
     },
+    {
+      // down the dune path to the beach at dusk
+      to: "playa",
+      x: 518,
+      y: ROOM_H - WALL - 16,
+      w: 104,
+      h: 24,
+      facing: "up",
+      label: "the beach",
+    },
   ],
   spawns: {
     kissa: { x: WALL + 70, y: 560 },
     tearoom: { x: ROOM_W - WALL - 120, y: 300 },
     housemiam: { x: 872, y: 120 },
+    playa: { x: 570, y: ROOM_H - 110 },
   },
   defaultSpawn: { x: ROOM_W / 2, y: ROOM_H - 220 },
 };
@@ -168,8 +191,20 @@ const OMAKASE: RoomDef = {
       facing: "up",
       label: "back to the kissa",
     },
+    {
+      to: "archive",
+      x: WALL - 10,
+      y: 352,
+      w: 20,
+      h: 96,
+      facing: "right",
+      label: "the archive",
+    },
   ],
-  spawns: { kissa: { x: 572, y: ROOM_H - 110 } },
+  spawns: {
+    kissa: { x: 572, y: ROOM_H - 110 },
+    archive: { x: WALL + 110, y: 400 },
+  },
   defaultSpawn: { x: ROOM_W / 2, y: 520 },
 };
 
@@ -190,8 +225,20 @@ const BERLIN: RoomDef = {
       facing: "left",
       label: "back to the kissa",
     },
+    {
+      to: "warehouse",
+      x: WALL - 10,
+      y: 430,
+      w: 20,
+      h: 96,
+      facing: "right",
+      label: "the warehouse",
+    },
   ],
-  spawns: { kissa: { x: ROOM_W - WALL - 110, y: 400 } },
+  spawns: {
+    kissa: { x: ROOM_W - WALL - 110, y: 400 },
+    warehouse: { x: WALL + 110, y: 478 },
+  },
   defaultSpawn: { x: ROOM_W / 2, y: 430 },
 };
 
@@ -212,9 +259,248 @@ const TEAROOM: RoomDef = {
       facing: "right",
       label: "to the garden",
     },
+    {
+      to: "labyrinth",
+      x: 518,
+      y: ROOM_H - WALL - 16,
+      w: 104,
+      h: 24,
+      facing: "up",
+      label: "the labyrinth",
+    },
   ],
-  spawns: { garden: { x: WALL + 110, y: 400 } },
+  spawns: {
+    garden: { x: WALL + 110, y: 400 },
+    labyrinth: { x: 570, y: ROOM_H - 110 },
+  },
   defaultSpawn: { x: ROOM_W / 2, y: 640 },
+};
+
+/* ------------------------------------------------------------------ the maze
+ * Six rooms turn the hub-and-spoke into a WEB: two big loops + a cross-link.
+ *   kissa → berlin → warehouse → rooftop → labyrinth → tearoom → garden → kissa
+ *   kissa → omakase → archive → mattarello → playa → garden → kissa
+ *   labyrinth ↔ archive (the shortcut you only find from inside the maze)
+ * The labyrinth also has REAL internal hedge walls (engine builds them from
+ * LAB_GRID) with a hidden crate chamber at its centre. */
+
+// Il Mattarello — a tribute trattoria. "Handmade. Unhurried. Baja." Terracotta,
+// flour dust, a wood-fired oven, one long communal table, gallery walls. The
+// framed piece on the easel IS the attribution link (ilmattarello.mx).
+const MATTARELLO: RoomDef = {
+  id: "mattarello",
+  name: "IL MATTARELLO · 麺棒",
+  scene: "trattoria",
+  doors: [
+    {
+      to: "playa",
+      x: WALL - 10,
+      y: 420,
+      w: 20,
+      h: 96,
+      facing: "right",
+      label: "down to the beach",
+    },
+    {
+      to: "archive",
+      x: 518,
+      y: 8,
+      w: 104,
+      h: 24,
+      facing: "down",
+      label: "the archive",
+    },
+  ],
+  spawns: {
+    playa: { x: WALL + 110, y: 470 },
+    archive: { x: 570, y: 120 },
+  },
+  defaultSpawn: { x: ROOM_W / 2, y: 560 },
+};
+
+// La Playa — dusk beach club. Sand underfoot, the sea along the bottom, palms,
+// a fire pit, torch light. The afro/melodic crates live here.
+const PLAYA: RoomDef = {
+  id: "playa",
+  name: "LA PLAYA · 波",
+  scene: "playa",
+  doors: [
+    {
+      to: "garden",
+      x: 518,
+      y: 8,
+      w: 104,
+      h: 24,
+      facing: "down",
+      label: "up to the garden",
+    },
+    {
+      to: "mattarello",
+      x: ROOM_W - WALL - 10,
+      y: 420,
+      w: 20,
+      h: 96,
+      facing: "left",
+      label: "il mattarello",
+    },
+  ],
+  spawns: {
+    garden: { x: 570, y: 120 },
+    mattarello: { x: ROOM_W - WALL - 110, y: 470 },
+  },
+  defaultSpawn: { x: ROOM_W / 2, y: 400 },
+};
+
+// The Warehouse — Chicago, where house was born. Brick, steel, smoke, a wall of
+// speakers, a 909 on a pedestal like a relic.
+const WAREHOUSE: RoomDef = {
+  id: "warehouse",
+  name: "WAREHOUSE · 倉庫",
+  scene: "warehouse",
+  doors: [
+    {
+      to: "berlin",
+      x: ROOM_W - WALL - 10,
+      y: 430,
+      w: 20,
+      h: 96,
+      facing: "left",
+      label: "back to berlin",
+    },
+    {
+      to: "rooftop",
+      x: 518,
+      y: 8,
+      w: 104,
+      h: 24,
+      facing: "down",
+      label: "stairs to the roof",
+    },
+  ],
+  spawns: {
+    berlin: { x: ROOM_W - WALL - 110, y: 478 },
+    rooftop: { x: 570, y: 120 },
+  },
+  defaultSpawn: { x: ROOM_W / 2, y: 460 },
+};
+
+// The Rooftop — melodic deep house over a glowing skyline. String lights,
+// planters, the city far below.
+const ROOFTOP: RoomDef = {
+  id: "rooftop",
+  name: "SKYLINE · 空",
+  scene: "rooftop",
+  doors: [
+    {
+      to: "warehouse",
+      x: 518,
+      y: ROOM_H - WALL - 16,
+      w: 104,
+      h: 24,
+      facing: "up",
+      label: "down the stairs",
+    },
+    {
+      to: "labyrinth",
+      x: ROOM_W - WALL - 10,
+      y: 400,
+      w: 20,
+      h: 96,
+      facing: "left",
+      label: "the labyrinth",
+    },
+  ],
+  spawns: {
+    warehouse: { x: 570, y: ROOM_H - 110 },
+    labyrinth: { x: ROOM_W - WALL - 110, y: 448 },
+  },
+  defaultSpawn: { x: ROOM_W / 2, y: 520 },
+};
+
+// The Bamboo Labyrinth — a real maze (hedge solids from LAB_GRID in the engine).
+// Three ways in, dead ends, and a hidden chamber at the centre holding a crate.
+const LABYRINTH: RoomDef = {
+  id: "labyrinth",
+  name: "迷路 · THE LABYRINTH",
+  scene: "labyrinth",
+  doors: [
+    {
+      to: "tearoom",
+      x: 518,
+      y: 8,
+      w: 104,
+      h: 24,
+      facing: "down",
+      label: "the tea room",
+    },
+    {
+      to: "rooftop",
+      x: WALL - 10,
+      y: 400,
+      w: 20,
+      h: 96,
+      facing: "right",
+      label: "the rooftop",
+    },
+    {
+      to: "archive",
+      x: 760,
+      y: ROOM_H - WALL - 16,
+      w: 104,
+      h: 24,
+      facing: "up",
+      label: "the archive",
+    },
+  ],
+  spawns: {
+    tearoom: { x: 570, y: 120 },
+    rooftop: { x: WALL + 110, y: 448 },
+    archive: { x: 812, y: ROOM_H - 110 },
+  },
+  defaultSpawn: { x: 570, y: 120 },
+};
+
+// The Archive — the deep-history vault. Long stacks, card catalogue, banker's
+// lamps. Where the classics rest.
+const ARCHIVE: RoomDef = {
+  id: "archive",
+  name: "書庫 · THE ARCHIVE",
+  scene: "archive",
+  doors: [
+    {
+      to: "omakase",
+      x: ROOM_W - WALL - 10,
+      y: 352,
+      w: 20,
+      h: 96,
+      facing: "left",
+      label: "the omakase counter",
+    },
+    {
+      to: "mattarello",
+      x: 248,
+      y: ROOM_H - WALL - 16,
+      w: 104,
+      h: 24,
+      facing: "up",
+      label: "il mattarello",
+    },
+    {
+      to: "labyrinth",
+      x: 760,
+      y: 8,
+      w: 104,
+      h: 24,
+      facing: "down",
+      label: "the labyrinth",
+    },
+  ],
+  spawns: {
+    omakase: { x: ROOM_W - WALL - 110, y: 400 },
+    mattarello: { x: 300, y: ROOM_H - 110 },
+    labyrinth: { x: 812, y: 120 },
+  },
+  defaultSpawn: { x: ROOM_W / 2, y: 600 },
 };
 
 export const ROOMS: Record<string, RoomDef> = {
@@ -224,6 +510,12 @@ export const ROOMS: Record<string, RoomDef> = {
   berlin: BERLIN,
   tearoom: TEAROOM,
   housemiam: HOUSEMIAM,
+  mattarello: MATTARELLO,
+  playa: PLAYA,
+  warehouse: WAREHOUSE,
+  rooftop: ROOFTOP,
+  labyrinth: LABYRINTH,
+  archive: ARCHIVE,
 };
 
 export const HUB_ROOM = "kissa";

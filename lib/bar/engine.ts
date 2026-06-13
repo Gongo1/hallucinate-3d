@@ -55,7 +55,7 @@ type Zone =
   | { type: "deck"; cx: number; cy: number; r: number }
   | { type: "bar"; cx: number; cy: number; r: number }
   | { type: "portal"; cx: number; cy: number; r: number }
-  | { type: "goldrecord"; cx: number; cy: number; r: number; url: string }
+  | { type: "goldrecord"; cx: number; cy: number; r: number; url: string; label?: string }
   | { type: "door"; cx: number; cy: number; r: number; door: RoomDoor };
 
 interface Entity {
@@ -141,6 +141,54 @@ const TEA_SPOTS: DigSpot[] = [
   { x: 800, y: 500, label: "left" },
   { x: 800, y: 360, label: "left" },
 ];
+// La Playa: in the open sand between the palms, clear of the fire pit + shore.
+const PLAYA_SPOTS: DigSpot[] = [
+  { x: 360, y: 410, label: "right" },
+  { x: 790, y: 380, label: "left" },
+];
+// Warehouse: against the left brick wall, off the floor (berlin door is right wall).
+const WAREHOUSE_SPOTS: DigSpot[] = [
+  { x: 270, y: 430, label: "right" },
+  { x: 270, y: 560, label: "right" },
+];
+// Rooftop: on the terrace among the planters (railing above, stairs below).
+const ROOFTOP_SPOTS: DigSpot[] = [
+  { x: 400, y: 480, label: "right" },
+  { x: 740, y: 560, label: "left" },
+];
+// Trattoria: by the flour station (left) and beside the communal table.
+const MATTARELLO_SPOTS: DigSpot[] = [
+  { x: 320, y: 290, label: "right" },
+  { x: 660, y: 560, label: "left" },
+];
+// Archive: in the reading aisles between the stacks.
+const ARCHIVE_SPOTS: DigSpot[] = [
+  { x: 320, y: 430, label: "right" },
+  { x: 640, y: 430, label: "left" },
+  { x: 480, y: 650, label: "right" },
+];
+// Labyrinth: the hidden chamber at the maze's centre (LAB_GRID r4c5) — the
+// treasure you earn by getting lost.
+const LABYRINTH_SPOTS: DigSpot[] = [{ x: 540, y: 446, label: "right" }];
+
+// THE MAZE. 12×8 cells over the room interior; '#' becomes a solid hedge block
+// (and is drawn as bamboo hedge). Openings line up with the three doors: top
+// (col 6), left (row 4), bottom (col 8). Centre chamber at r4c4-7 holds the
+// hidden crate. Edited by hand — keep every row 12 chars and the door cells open.
+const LAB_GRID = [
+  "............",
+  ".###.#.####.",
+  ".#...#....#.",
+  ".#.######.#.",
+  "...#....#.#.",
+  "##.#.##.#...",
+  ".....#..###.",
+  ".###.#.#....",
+];
+const LAB_COLS = 12;
+const LAB_ROWS = 8;
+const LAB_CW = (ROOM.w - 2 * WALL) / LAB_COLS;
+const LAB_CH = (ROOM.h - 2 * WALL) / LAB_ROWS;
 
 // Every door is themed to the room it LEADS to — a distinct colour, frame design,
 // glimpse-beyond, and an always-visible name + vibe placard, so it reads at a glance
@@ -161,6 +209,14 @@ const DOOR_THEME: Record<string, DoorTheme> = {
   berlin: { name: "BERLIN", kanji: "地下", vibe: "concrete · fog · 4am", accent: "#ff7a72", glow: "#e0433a", frame: "#26262b", style: "berlin" },
   tearoom: { name: "TEA ROOM", kanji: "茶室", vibe: "tatami · tea · calm", accent: "#d4ecc4", glow: "#9bbf8a", frame: "#5a4a32", style: "tearoom" },
   housemiam: { name: "HOUSEUM", kanji: "宇宙", vibe: "cosmic french house", accent: "#ff8ad6", glow: "#8a6cff", frame: "#2a1d5e", style: "cosmic" },
+  // The maze wing. New door styles reuse the closest existing accent renderer —
+  // the palette (accent/glow/frame) is what makes each gateway read differently.
+  mattarello: { name: "IL MATTARELLO", kanji: "麺棒", vibe: "handmade · unhurried · baja", accent: "#f3c9a8", glow: "#e0875a", frame: "#7a4a2e", style: "omakase" },
+  playa: { name: "LA PLAYA", kanji: "波", vibe: "dusk surf · fire · sand", accent: "#ffd9a8", glow: "#ff9e5e", frame: "#5a4630", style: "garden" },
+  warehouse: { name: "WAREHOUSE", kanji: "倉庫", vibe: "chicago · where it began", accent: "#ffb38c", glow: "#d86a3a", frame: "#3a2a24", style: "berlin" },
+  rooftop: { name: "SKYLINE", kanji: "空", vibe: "melodic · city far below", accent: "#bfe0ff", glow: "#7ab8d8", frame: "#2c3a4a", style: "cosmic" },
+  labyrinth: { name: "LABYRINTH", kanji: "迷路", vibe: "get lost · find the centre", accent: "#cfe8a8", glow: "#86b86a", frame: "#3e4a2c", style: "garden" },
+  archive: { name: "THE ARCHIVE", kanji: "書庫", vibe: "the deep history shelf", accent: "#c8e8c8", glow: "#3f7d5a", frame: "#33402e", style: "tearoom" },
 };
 
 // Crates lean into the room they sit in — the bin material, the disc-label colour,
@@ -178,6 +234,12 @@ function crateStyleFor(scene: string): CrateStyle {
     case "berlin": return { bin: "#26262b", binEdge: "#3c3c44", disc: "#e0433a", motif: "bar" };
     case "tearoom": return { bin: "#6b5a40", binEdge: "#8a7350", disc: "#9bbf8a", motif: "ripple" };
     case "curator": return { bin: "#1a1240", binEdge: "#3a2a6e", disc: "#ffd76a", motif: "holo" }; // iridescent
+    case "trattoria": return { bin: "#8a5638", binEdge: "#b07448", disc: "#f3c9a8", motif: "dot" }; // terracotta
+    case "playa": return { bin: "#7a6a4e", binEdge: "#a08a64", disc: "#ff9e5e", motif: "ripple" }; // driftwood
+    case "warehouse": return { bin: "#4a2e26", binEdge: "#6a4034", disc: "#ff8a4e", motif: "bar" }; // brick
+    case "rooftop": return { bin: "#2c3a4a", binEdge: "#46586c", disc: "#7ab8d8", motif: "dot" }; // steel blue
+    case "labyrinth": return { bin: "#3e4a2c", binEdge: "#5a6a40", disc: "#cfe8a8", motif: "leaf" }; // hedge
+    case "archive": return { bin: "#33402e", binEdge: "#4a5a42", disc: "#c8e8c8", motif: "moon" }; // vault green
     default: return { bin: "#5b3f23", binEdge: "#6e4d2c", disc: "#ffb35e", motif: "moon" }; // kissa
   }
 }
@@ -282,6 +344,68 @@ export class BarEngine {
     ph: Math.random() * Math.PI * 2,
     s: 0.6 + Math.random() * 1.5,
   }));
+
+  // ----- LA PLAYA fixtures (dusk beach; sea along the BOTTOM of the room) -----
+  private pShoreY = 620; // sand above, surf below (solid — you can't swim)
+  private pFire = { x: 570, y: 460 }; // the fire pit everyone orbits
+  private pPalms = [
+    { x: 180, y: 300 },
+    { x: 950, y: 270 },
+    { x: 290, y: 560 },
+    { x: 900, y: 540 },
+  ];
+  private pTorches = [
+    { x: 460, y: 580 },
+    { x: 690, y: 580 },
+  ];
+
+  // ----- WAREHOUSE fixtures (Chicago — brick, steel, the speaker wall) -----
+  private wStage = { x: 380, y: 150, w: 380, h: 84 }; // speaker wall / stage, far wall
+  private wPillars: { x: number; y: number }[] = [
+    { x: 250, y: 330 },
+    { x: 890, y: 330 },
+    { x: 250, y: 620 },
+    { x: 890, y: 620 },
+  ];
+  private w909 = { x: 950, y: 560 }; // the TR-909 on a pedestal, like a relic
+  private wSmoke = Array.from({ length: 14 }, () => ({
+    x: Math.random(),
+    y: Math.random(),
+    s: 60 + Math.random() * 90,
+    ph: Math.random() * Math.PI * 2,
+  }));
+
+  // ----- ROOFTOP fixtures (melodic deep over the skyline) -----
+  private rRailY = 300; // parapet: city sky above, terrace below
+  private rPlanters: { x: number; y: number }[] = [
+    { x: 250, y: 420 },
+    { x: 890, y: 480 },
+    { x: 480, y: 620 },
+  ];
+  private rCart = { x: 820, y: 380 }; // little terrace bar cart
+  private rSky = Array.from({ length: 26 }, (_, i) => ({
+    // skyline silhouette: pseudo-random but stable building strip
+    w: 30 + ((i * 37) % 50),
+    h: 60 + ((i * 53) % 120),
+    win: (i * 7919) % 97,
+  }));
+
+  // ----- TRATTORIA (Il Mattarello) fixtures -----
+  private mOven = { x: 920, y: 150, w: 130, h: 100 }; // wood-fired oven, top right
+  private mTable = { x: 430, y: 400, w: 280, h: 74 }; // one long communal table
+  private mEasel = { x: 850, y: 520 }; // the framed piece = the attribution link
+  private mFlour = [
+    { x: 180, y: 560 },
+    { x: 238, y: 584 },
+  ]; // flour sacks by the pasta station
+
+  // ----- ARCHIVE fixtures (the deep-history vault) -----
+  private aStacks = [
+    { x: 200, y: 180, w: 600, h: 44 },
+    { x: 200, y: 320, w: 600, h: 44 },
+  ]; // long record stacks (aisles between)
+  private aTable = { x: 420, y: 520, w: 300, h: 64 }; // reading table, banker's lamps
+  private aCatalog = { x: 950, y: 600 }; // the card catalogue
 
   private player = {
     x: ROOM.w / 2,
@@ -506,6 +630,12 @@ export class BarEngine {
     if (this.room.scene === "berlin") return this.placeDigSpots(here, BERLIN_SPOTS);
     if (this.room.scene === "tearoom") return this.placeDigSpots(here, TEA_SPOTS);
     if (this.room.scene === "curator") return this.placeDigSpots(here, HOUSEMIAM_SPOTS);
+    if (this.room.scene === "playa") return this.placeDigSpots(here, PLAYA_SPOTS);
+    if (this.room.scene === "warehouse") return this.placeDigSpots(here, WAREHOUSE_SPOTS);
+    if (this.room.scene === "rooftop") return this.placeDigSpots(here, ROOFTOP_SPOTS);
+    if (this.room.scene === "trattoria") return this.placeDigSpots(here, MATTARELLO_SPOTS);
+    if (this.room.scene === "archive") return this.placeDigSpots(here, ARCHIVE_SPOTS);
+    if (this.room.scene === "labyrinth") return this.placeDigSpots(here, LABYRINTH_SPOTS);
 
     // DETROIT gets a special home on the RIGHT wall, just above the pour-over bar
     // (per request). Everything else forms the left-wall column.
@@ -581,6 +711,12 @@ export class BarEngine {
     else if (this.room.scene === "berlin") this.buildBerlinFixtures();
     else if (this.room.scene === "tearoom") this.buildTeaFixtures();
     else if (this.room.scene === "curator") this.buildCuratorFixtures();
+    else if (this.room.scene === "playa") this.buildPlayaFixtures();
+    else if (this.room.scene === "warehouse") this.buildWarehouseFixtures();
+    else if (this.room.scene === "rooftop") this.buildRooftopFixtures();
+    else if (this.room.scene === "trattoria") this.buildTrattoriaFixtures();
+    else if (this.room.scene === "archive") this.buildArchiveFixtures();
+    else if (this.room.scene === "labyrinth") this.buildLabyrinthFixtures();
 
     // doors out of this room (the door primitive — reused from the rave portal,
     // pointed inward). The frame is solid; the prompt/charge zone sits IN FRONT.
@@ -675,6 +811,66 @@ export class BarEngine {
       r: 76,
       url: this.curatorCfg()?.attribution.url ?? "",
     });
+  }
+
+  private buildPlayaFixtures() {
+    // the sea is not walkable — one solid band below the shoreline
+    this.solid(-40, this.pShoreY, ROOM.w + 80, ROOM.h - this.pShoreY + 40);
+    this.pPalms.forEach((p) => this.solid(p.x - 12, p.y - 8, 24, 24)); // trunks
+    this.pTorches.forEach((t) => this.solid(t.x - 8, t.y - 6, 16, 18));
+    const f = this.pFire;
+    this.solid(f.x - 26, f.y - 18, 52, 36); // fire pit ring
+  }
+
+  private buildWarehouseFixtures() {
+    this.solid(this.wStage.x, this.wStage.y, this.wStage.w, this.wStage.h); // speaker wall
+    this.wPillars.forEach((p) => this.solid(p.x - 14, p.y - 40, 28, 80));
+    this.solid(this.w909.x - 24, this.w909.y - 16, 48, 36); // the 909 pedestal
+  }
+
+  private buildRooftopFixtures() {
+    // the parapet — the city is far below, not walkable
+    this.solid(-40, this.rRailY - 9, ROOM.w + 80, 18);
+    this.rPlanters.forEach((p) => this.solid(p.x - 24, p.y - 14, 48, 30));
+    this.solid(this.rCart.x - 26, this.rCart.y - 14, 52, 30);
+  }
+
+  private buildTrattoriaFixtures() {
+    this.solid(this.mOven.x, this.mOven.y, this.mOven.w, this.mOven.h); // the oven
+    this.solid(this.mTable.x, this.mTable.y, this.mTable.w, this.mTable.h); // long table
+    this.mFlour.forEach((s) => this.solid(s.x - 16, s.y - 10, 32, 24));
+    // the framed piece on the easel — the honest attribution; E opens their site
+    const e = this.mEasel;
+    this.solid(e.x - 20, e.y - 12, 40, 30);
+    this.zones.push({
+      type: "goldrecord",
+      cx: e.x,
+      cy: e.y + 44,
+      r: 70,
+      url: "https://www.ilmattarello.mx/",
+      label: `See <b>Il Mattarello</b> — handmade · unhurried · Baja ↗`,
+    });
+  }
+
+  private buildArchiveFixtures() {
+    this.aStacks.forEach((s) => this.solid(s.x, s.y, s.w, s.h));
+    this.solid(this.aTable.x, this.aTable.y, this.aTable.w, this.aTable.h);
+    this.solid(this.aCatalog.x - 22, this.aCatalog.y - 16, 44, 36);
+  }
+
+  private buildLabyrinthFixtures() {
+    // hedge solids straight from LAB_GRID — horizontal runs merge into one rect
+    for (let r = 0; r < LAB_ROWS; r++) {
+      let run = -1;
+      for (let c = 0; c <= LAB_COLS; c++) {
+        const hedge = c < LAB_COLS && LAB_GRID[r][c] === "#";
+        if (hedge && run < 0) run = c;
+        if (!hedge && run >= 0) {
+          this.solid(WALL + run * LAB_CW, WALL + r * LAB_CH, (c - run) * LAB_CW, LAB_CH);
+          run = -1;
+        }
+      }
+    }
   }
 
   private npc(
@@ -969,6 +1165,42 @@ export class BarEngine {
     }
     if (roomId === "tearoom") return []; // stillness — no wanderers
     if (this.room.scene === "curator") return []; // the cat is the resident, not a wanderer
+    if (roomId === "playa") {
+      // two dancers orbiting the fire pit in the sand
+      return [
+        this.npc([{ x: 470, y: 380 }, { x: 680, y: 400 }, { x: 660, y: 540 }, { x: 470, y: 530 }], "#d98a5f", "#241812"),
+        this.npc([{ x: 700, y: 470 }, { x: 540, y: 560 }, { x: 440, y: 460 }], "#7e9b8a", "#15151a"),
+      ];
+    }
+    if (roomId === "warehouse") {
+      // bodies on the floor — the warehouse never really emptied since '86
+      return [
+        this.npc([{ x: 450, y: 360 }, { x: 700, y: 330 }, { x: 660, y: 540 }, { x: 430, y: 500 }], "#b08a52", "#0c0c0e"),
+        this.npc([{ x: 760, y: 480 }, { x: 540, y: 430 }, { x: 620, y: 320 }], "#8a4a40", "#0c0c0e"),
+      ];
+    }
+    if (roomId === "rooftop") {
+      // one listener drifting the terrace edge, watching the city
+      return [
+        this.npc([{ x: 320, y: 380 }, { x: 760, y: 360 }, { x: 640, y: 560 }], "#7a8ab0", "#1b1b22"),
+      ];
+    }
+    if (roomId === "mattarello") {
+      // the host, making the rounds between the table and the oven
+      return [
+        this.npc([{ x: 560, y: 330 }, { x: 880, y: 300 }, { x: 760, y: 560 }, { x: 480, y: 540 }], "#c97e5d", "#1c130b"),
+      ];
+    }
+    if (roomId === "archive") {
+      // one digger working the aisles
+      return [
+        this.npc([{ x: 280, y: 270 }, { x: 740, y: 270 }, { x: 740, y: 430 }, { x: 280, y: 430 }], "#6a7d5a", "#241812"),
+      ];
+    }
+    if (roomId === "labyrinth") {
+      // a lone wanderer pacing the entry corridor — proof someone else is lost too
+      return [this.npc([{ x: 140, y: 74 }, { x: 990, y: 74 }], "#86b86a", "#15151a")];
+    }
     return [
       this.npc([{ x: 340, y: 250 }, { x: 900, y: 250 }, { x: 900, y: 560 }, { x: 340, y: 560 }], "#b06a52", "#2a1c12"),
       this.npc([{ x: 430, y: 610 }, { x: 760, y: 600 }, { x: 840, y: 430 }], "#56877e", "#1b1b22"),
@@ -1078,7 +1310,7 @@ export class BarEngine {
       if (best.type === "bar") s = `Ask the master for a <b>pour &amp; a pick</b>`;
       if (best.type === "portal") s = `Enter the <b>rave</b>?`;
       if (best.type === "goldrecord")
-        s = `Give <b>Houseum</b> their flowers — open their YouTube ↗`;
+        s = best.label ?? `Give <b>Houseum</b> their flowers — open their YouTube ↗`;
       if (best.type === "door") s = `Step through to <b>${best.door.label}</b>`;
       html = s + ` <span class="key">E</span>`;
     }
@@ -1169,6 +1401,30 @@ export class BarEngine {
         this.drawCuratorRoom();
         this.drawShelves();
         break;
+      case "playa":
+        this.drawPlaya();
+        this.drawShelves();
+        break;
+      case "warehouse":
+        this.drawWarehouse();
+        this.drawShelves();
+        break;
+      case "rooftop":
+        this.drawRooftop();
+        this.drawShelves();
+        break;
+      case "trattoria":
+        this.drawTrattoria();
+        this.drawShelves();
+        break;
+      case "labyrinth":
+        this.drawLabyrinth();
+        this.drawShelves();
+        break;
+      case "archive":
+        this.drawArchive();
+        this.drawShelves();
+        break;
     }
     this.drawDoors();
 
@@ -1213,6 +1469,12 @@ export class BarEngine {
       case "omakase": return "#0b0908";
       case "tearoom": return "#0c0b07";
       case "curator": return this.curatorCfg()?.palette.terrace ?? "#0c0820"; // cosmic
+      case "playa": return "#0e1220"; // dusk over the sea
+      case "warehouse": return "#0b0807"; // sodium-lit brick dark
+      case "rooftop": return "#0a0e1a"; // city night
+      case "trattoria": return "#140d08"; // candle-lit plaster
+      case "labyrinth": return "#0a0f08"; // deep hedge green-black
+      case "archive": return "#0a0d09"; // vault green-black
       default: return "#0a0604"; // kissa
     }
   }
@@ -2551,6 +2813,714 @@ export class BarEngine {
     ctx.shadowBlur = 8;
     ctx.fillText("茶室 · TEA ROOM", ROOM.w / 2, ROOM.h - 64);
     ctx.shadowBlur = 0;
+  }
+
+  /** Shared name-plate at the bottom of a scene. */
+  private namePlate(text: string, color = "#efe2c8") {
+    const ctx = this.ctx;
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.font = "800 22px 'Shippori Mincho',serif";
+    ctx.fillStyle = color;
+    ctx.shadowColor = "rgba(0,0,0,.5)";
+    ctx.shadowBlur = 8;
+    ctx.fillText(text, ROOM.w / 2, ROOM.h - 64);
+    ctx.shadowBlur = 0;
+  }
+
+  /** LA PLAYA — dusk beach. Sand field, palms, a fire pit, torches, and the sea
+   *  rolling along the bottom of the room (animated surf foam). */
+  private drawPlaya() {
+    const ctx = this.ctx;
+    const now = performance.now();
+
+    // sand
+    ctx.fillStyle = "#a8906a";
+    ctx.fillRect(0, 0, ROOM.w, this.pShoreY);
+    ctx.fillStyle = "rgba(0,0,0,.12)";
+    for (let i = 0; i < 80; i++) {
+      const sx = (i * 137) % ROOM.w;
+      const sy = (i * 211) % this.pShoreY;
+      ctx.fillRect(sx, sy, 2, 2); // sand speckle (stable pseudo-random)
+    }
+    // wet shoreline gradient + sea
+    const sea = ctx.createLinearGradient(0, this.pShoreY - 40, 0, ROOM.h);
+    sea.addColorStop(0, "#8a7a5c");
+    sea.addColorStop(0.25, "#23405a");
+    sea.addColorStop(1, "#0c1a2c");
+    ctx.fillStyle = sea;
+    ctx.fillRect(0, this.pShoreY - 40, ROOM.w, ROOM.h - this.pShoreY + 40);
+    // three animated foam lines breathing up the beach
+    for (let k = 0; k < 3; k++) {
+      const ph = now / 2400 + k * 2.1;
+      const rise = Math.sin(ph) * 14;
+      ctx.strokeStyle = `rgba(235,242,240,${0.18 + 0.12 * Math.sin(ph + 1)})`;
+      ctx.lineWidth = 2 + k;
+      ctx.beginPath();
+      for (let x = 0; x <= ROOM.w; x += 24) {
+        const y = this.pShoreY - 6 + k * 16 + rise + Math.sin(x / 90 + ph * 2) * 5;
+        x === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+      }
+      ctx.stroke();
+    }
+    // moon glint path on the water
+    this.pool(ROOM.w / 2 + 180, ROOM.h - 60, 180, "rgba(220,230,255,.08)");
+
+    // palms — trunk + a crown of fronds
+    for (const p of this.pPalms) {
+      ctx.strokeStyle = "#5a4630";
+      ctx.lineWidth = 9;
+      ctx.beginPath();
+      ctx.moveTo(p.x, p.y + 14);
+      ctx.quadraticCurveTo(p.x + 10, p.y - 40, p.x + 4, p.y - 78);
+      ctx.stroke();
+      ctx.strokeStyle = "#3e6a44";
+      ctx.lineWidth = 5;
+      for (let f = 0; f < 6; f++) {
+        const a = (f / 6) * Math.PI * 2 + Math.sin(now / 1800 + p.x) * 0.06;
+        ctx.beginPath();
+        ctx.moveTo(p.x + 4, p.y - 78);
+        ctx.quadraticCurveTo(
+          p.x + 4 + Math.cos(a) * 34,
+          p.y - 78 + Math.sin(a) * 18 - 14,
+          p.x + 4 + Math.cos(a) * 62,
+          p.y - 78 + Math.sin(a) * 30 + 6
+        );
+        ctx.stroke();
+      }
+      this.pool(p.x, p.y + 10, 40, "rgba(0,0,0,.18)"); // ground shadow
+    }
+
+    // fire pit — stone ring + flicker + a big warm pool
+    const f = this.pFire;
+    const fl = 0.7 + 0.3 * Math.sin(now / 90) * Math.sin(now / 230);
+    this.pool(f.x, f.y, 190 + fl * 26, `rgba(255,150,70,${0.16 + fl * 0.08})`);
+    ctx.fillStyle = "#564a3e";
+    for (let i = 0; i < 9; i++) {
+      const a = (i / 9) * Math.PI * 2;
+      ctx.beginPath();
+      ctx.arc(f.x + Math.cos(a) * 26, f.y + Math.sin(a) * 17, 6, 0, 7);
+      ctx.fill();
+    }
+    ctx.fillStyle = `rgba(255,${140 + fl * 60},60,.9)`;
+    ctx.beginPath();
+    ctx.ellipse(f.x, f.y - 6 - fl * 6, 9, 14 + fl * 8, 0, 0, 7);
+    ctx.fill();
+    ctx.fillStyle = "rgba(255,235,170,.9)";
+    ctx.beginPath();
+    ctx.ellipse(f.x, f.y - 4, 4, 7 + fl * 4, 0, 0, 7);
+    ctx.fill();
+
+    // torches
+    for (const t of this.pTorches) {
+      ctx.fillStyle = "#4a3a26";
+      ctx.fillRect(t.x - 3, t.y - 26, 6, 32);
+      const tf = 0.6 + 0.4 * Math.sin(now / 140 + t.x);
+      ctx.fillStyle = `rgba(255,${150 + tf * 70},70,.95)`;
+      ctx.beginPath();
+      ctx.ellipse(t.x, t.y - 32, 5, 9 + tf * 4, 0, 0, 7);
+      ctx.fill();
+      this.pool(t.x, t.y - 20, 70, `rgba(255,160,80,${0.10 + tf * 0.05})`);
+    }
+
+    // driftwood benches (passable)
+    ctx.fillStyle = "#7a6a4e";
+    this.roundRect(430, 540, 90, 14, 7);
+    ctx.fill();
+    this.roundRect(640, 530, 80, 14, 7);
+    ctx.fill();
+
+    this.namePlate("LA PLAYA · 波", "#ffd9a8");
+  }
+
+  /** WAREHOUSE — Chicago, where house was born. Brick, steel shutters, a wall of
+   *  speakers, sodium light, drifting smoke, and a 909 on a pedestal. */
+  private drawWarehouse() {
+    const ctx = this.ctx;
+    const now = performance.now();
+
+    // poured-concrete floor with expansion joints + tire scuffs
+    ctx.fillStyle = "#262220";
+    ctx.fillRect(0, 0, ROOM.w, ROOM.h);
+    ctx.strokeStyle = "rgba(0,0,0,.35)";
+    ctx.lineWidth = 2;
+    for (let x = 160; x < ROOM.w; x += 240) {
+      ctx.beginPath();
+      ctx.moveTo(x, WALL);
+      ctx.lineTo(x, ROOM.h - WALL);
+      ctx.stroke();
+    }
+    for (let y = 200; y < ROOM.h; y += 220) {
+      ctx.beginPath();
+      ctx.moveTo(WALL, y);
+      ctx.lineTo(ROOM.w - WALL, y);
+      ctx.stroke();
+    }
+
+    // brick walls
+    ctx.fillStyle = "#3a2a24";
+    ctx.fillRect(0, 0, ROOM.w, WALL + 40);
+    ctx.fillRect(0, ROOM.h - WALL, ROOM.w, WALL);
+    ctx.fillRect(0, 0, WALL, ROOM.h);
+    ctx.fillRect(ROOM.w - WALL, 0, WALL, ROOM.h);
+    ctx.strokeStyle = "rgba(0,0,0,.3)";
+    ctx.lineWidth = 1;
+    for (let y = 8; y < WALL + 40; y += 12)
+      for (let x = (y % 24 ? 0 : 20); x < ROOM.w; x += 40)
+        ctx.strokeRect(x, y, 40, 12);
+
+    // the speaker wall / stage along the back
+    const s = this.wStage;
+    ctx.fillStyle = "#1a1614";
+    ctx.fillRect(s.x, s.y, s.w, s.h);
+    for (let i = 0; i < 5; i++)
+      for (let j = 0; j < 2; j++) {
+        const bx = s.x + 14 + i * 72;
+        const by = s.y + 8 + j * 36;
+        ctx.fillStyle = "#0e0c0b";
+        ctx.fillRect(bx, by, 62, 30);
+        const womp = this.playingPulse(now, i + j);
+        ctx.strokeStyle = `rgba(255,140,80,${0.25 + womp * 0.45})`;
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.arc(bx + 20, by + 15, 8 + womp * 2, 0, 7);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.arc(bx + 45, by + 15, 5 + womp * 1.5, 0, 7);
+        ctx.stroke();
+      }
+
+    // steel pillars
+    for (const p of this.wPillars) {
+      ctx.fillStyle = "#34302e";
+      ctx.fillRect(p.x - 14, p.y - 40, 28, 80);
+      ctx.fillStyle = "#4a4542";
+      ctx.fillRect(p.x - 14, p.y - 40, 6, 80);
+      ctx.fillStyle = "rgba(214,170,60,.5)"; // hazard band
+      ctx.fillRect(p.x - 14, p.y + 26, 28, 8);
+    }
+
+    // the TR-909 shrine — pedestal + the relic, one spotlight on it
+    const n = this.w909;
+    this.pool(n.x, n.y - 8, 90, "rgba(255,180,90,.14)");
+    ctx.fillStyle = "#3a3430";
+    ctx.fillRect(n.x - 24, n.y - 16, 48, 36);
+    ctx.fillStyle = "#d8d2c8";
+    ctx.fillRect(n.x - 20, n.y - 30, 40, 18);
+    ctx.fillStyle = "#e0763a";
+    ctx.fillRect(n.x - 18, n.y - 27, 10, 4);
+    ctx.fillStyle = "#1a1a1a";
+    for (let i = 0; i < 8; i++) ctx.fillRect(n.x - 18 + i * 4.6, n.y - 19, 3, 5);
+
+    // sodium light pools + drifting smoke
+    this.pool(570, 420, 320, "rgba(255,160,60,.07)");
+    for (const sm of this.wSmoke) {
+      const x = ((sm.x + now / 60000) % 1) * ROOM.w;
+      const y = WALL + sm.y * (ROOM.h - 2 * WALL);
+      ctx.globalAlpha = 0.05 + 0.04 * Math.sin(now / 3000 + sm.ph);
+      ctx.fillStyle = "#c8c2ba";
+      ctx.beginPath();
+      ctx.arc(x, y, sm.s, 0, 7);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // painted floor letters, half worn away
+    ctx.font = "900 64px 'Anton',sans-serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(216,170,60,.10)";
+    ctx.fillText("HOUSE IS A FEELING", 570, 470);
+
+    this.namePlate("WAREHOUSE · 倉庫", "#ffb38c");
+  }
+
+  /** A small playback-synced pulse helper (mirrors the kissa speaker pulse). */
+  private playingPulse(now: number, seed: number): number {
+    if (!this.cb.isPlaying()) return 0.15;
+    return 0.5 + 0.5 * Math.sin(now / 180 + seed * 1.7);
+  }
+
+  /** SKYLINE — the rooftop. City far below beyond the parapet, string lights,
+   *  planters, a bar cart, melodic deep at altitude. */
+  private drawRooftop() {
+    const ctx = this.ctx;
+    const now = performance.now();
+
+    // night sky + skyline above the parapet
+    const sky = ctx.createLinearGradient(0, 0, 0, this.rRailY);
+    sky.addColorStop(0, "#0a0e1a");
+    sky.addColorStop(0.7, "#16203a");
+    sky.addColorStop(1, "#2a3050");
+    ctx.fillStyle = sky;
+    ctx.fillRect(0, 0, ROOM.w, this.rRailY);
+    for (const st of this.cStars.slice(0, 40)) {
+      ctx.globalAlpha = 0.3 + 0.4 * Math.abs(Math.sin(now / 1400 + st.ph));
+      ctx.fillStyle = "#cfe0ff";
+      ctx.fillRect(st.x * ROOM.w, st.y * (this.rRailY - 90), st.s, st.s);
+    }
+    ctx.globalAlpha = 1;
+    // buildings — stable pseudo-random strip with lit windows
+    let bx = -10;
+    for (const b of this.rSky) {
+      const bh = b.h;
+      ctx.fillStyle = "#0c1220";
+      ctx.fillRect(bx, this.rRailY - bh, b.w, bh);
+      ctx.fillStyle = "rgba(255,214,140,.55)";
+      for (let wy = 8; wy < bh - 6; wy += 14)
+        for (let wx = 4; wx < b.w - 6; wx += 12)
+          if ((wx * 31 + wy * 17 + b.win) % 11 < 2) ctx.fillRect(bx + wx, this.rRailY - bh + wy, 4, 6);
+      bx += b.w + 6;
+      if (bx > ROOM.w) break;
+    }
+
+    // parapet
+    ctx.fillStyle = "#2c3a4a";
+    ctx.fillRect(-40, this.rRailY - 9, ROOM.w + 80, 18);
+    ctx.fillStyle = "#46586c";
+    ctx.fillRect(-40, this.rRailY - 9, ROOM.w + 80, 4);
+
+    // terrace deck — big pavers
+    ctx.fillStyle = "#333a42";
+    ctx.fillRect(0, this.rRailY + 9, ROOM.w, ROOM.h - this.rRailY - 9);
+    ctx.strokeStyle = "rgba(0,0,0,.3)";
+    ctx.lineWidth = 2;
+    for (let x = 60; x < ROOM.w; x += 130) {
+      ctx.beginPath();
+      ctx.moveTo(x, this.rRailY + 9);
+      ctx.lineTo(x, ROOM.h - WALL);
+      ctx.stroke();
+    }
+    for (let y = this.rRailY + 80; y < ROOM.h - WALL; y += 110) {
+      ctx.beginPath();
+      ctx.moveTo(WALL, y);
+      ctx.lineTo(ROOM.w - WALL, y);
+      ctx.stroke();
+    }
+
+    // two swooping strings of bulbs across the terrace
+    for (let k = 0; k < 2; k++) {
+      const y0 = this.rRailY + 40 + k * 26;
+      ctx.strokeStyle = "rgba(20,24,30,.8)";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(80, y0);
+      ctx.quadraticCurveTo(ROOM.w / 2, y0 + 70, ROOM.w - 80, y0);
+      ctx.stroke();
+      for (let i = 0; i <= 12; i++) {
+        const t = i / 12;
+        const lx = 80 + (ROOM.w - 160) * t;
+        const ly = y0 + 2 * (1 - t) * t * 2 * 70 + 6;
+        const tw = 0.6 + 0.4 * Math.sin(now / 900 + i + k * 3);
+        ctx.fillStyle = `rgba(255,214,140,${0.5 + tw * 0.4})`;
+        ctx.beginPath();
+        ctx.arc(lx, ly, 2.5, 0, 7);
+        ctx.fill();
+        this.pool(lx, ly, 26, `rgba(255,200,120,${0.04 + tw * 0.03})`);
+      }
+    }
+
+    // planters with night grasses
+    for (const p of this.rPlanters) {
+      ctx.fillStyle = "#26303a";
+      this.roundRect(p.x - 24, p.y - 14, 48, 30, 5);
+      ctx.fill();
+      ctx.strokeStyle = "#5a7a5a";
+      ctx.lineWidth = 2;
+      for (let g = -3; g <= 3; g++) {
+        ctx.beginPath();
+        ctx.moveTo(p.x + g * 5, p.y - 12);
+        ctx.quadraticCurveTo(p.x + g * 9, p.y - 34, p.x + g * 12, p.y - 44 + Math.abs(g) * 4);
+        ctx.stroke();
+      }
+    }
+
+    // bar cart
+    const c = this.rCart;
+    ctx.fillStyle = "#3e4a56";
+    this.roundRect(c.x - 26, c.y - 14, 52, 30, 5);
+    ctx.fill();
+    ctx.fillStyle = "#caa44a";
+    ctx.fillRect(c.x - 18, c.y - 22, 8, 10);
+    ctx.fillRect(c.x - 4, c.y - 24, 8, 12);
+    ctx.fillRect(c.x + 10, c.y - 21, 8, 9);
+
+    this.namePlate("SKYLINE · 空", "#bfe0ff");
+  }
+
+  /** IL MATTARELLO — the tribute trattoria. Terracotta tiles, gallery walls, a
+   *  wood-fired oven, one long communal table, flour dust in the light.
+   *  "Handmade. Unhurried. Baja." */
+  private drawTrattoria() {
+    const ctx = this.ctx;
+    const now = performance.now();
+
+    // terracotta tile floor
+    ctx.fillStyle = "#8a5638";
+    ctx.fillRect(0, 0, ROOM.w, ROOM.h);
+    ctx.strokeStyle = "rgba(40,20,10,.35)";
+    ctx.lineWidth = 2;
+    const tile = 86;
+    for (let x = 0; x < ROOM.w; x += tile) {
+      ctx.beginPath();
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, ROOM.h);
+      ctx.stroke();
+    }
+    for (let y = 0; y < ROOM.h; y += tile) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(ROOM.w, y);
+      ctx.stroke();
+    }
+    // warm wash where the candles live
+    this.pool(570, 430, 380, "rgba(255,190,120,.10)");
+
+    // plaster walls
+    ctx.fillStyle = "#2a1c12";
+    ctx.fillRect(0, ROOM.h - WALL, ROOM.w, WALL);
+    ctx.fillRect(0, 0, WALL, ROOM.h);
+    ctx.fillRect(ROOM.w - WALL, 0, WALL, ROOM.h);
+    const pw = ctx.createLinearGradient(0, 0, 0, WALL + 92);
+    pw.addColorStop(0, "#4a3424");
+    pw.addColorStop(1, "#3a281a");
+    ctx.fillStyle = pw;
+    ctx.fillRect(0, 0, ROOM.w, WALL + 86);
+
+    // GALLERY WALL — small canvases, each its own little colour world (art vibes)
+    const art = ["#c97e5d", "#7e9b8a", "#d8b27a", "#5a86a8", "#b06a52", "#cfc8b8"];
+    art.forEach((col, i) => {
+      const ax = 120 + i * 110;
+      if (ax > 470 && ax < 680) return; // leave room over the archive door
+      ctx.fillStyle = "#1c130b";
+      ctx.fillRect(ax - 3, WALL + 8 - 3, 62, 50);
+      ctx.fillStyle = col;
+      ctx.fillRect(ax, WALL + 8, 56, 44);
+      ctx.fillStyle = "rgba(0,0,0,.25)";
+      ctx.beginPath();
+      ctx.arc(ax + 28 + (i % 3) * 6 - 6, WALL + 30, 10 + (i % 2) * 6, 0, 7);
+      ctx.fill();
+    });
+    // the credo, hand-painted on the plaster
+    ctx.font = "600 17px 'Shippori Mincho',serif";
+    ctx.textAlign = "center";
+    ctx.fillStyle = "rgba(243,221,184,.85)";
+    ctx.fillText("Handmade. Unhurried. Baja.", 820, WALL + 34);
+
+    // the wood-fired oven — brick dome, ember mouth, slow smoke
+    const o = this.mOven;
+    ctx.fillStyle = "#5a3a28";
+    this.roundRect(o.x, o.y + 24, o.w, o.h - 24, 8);
+    ctx.fill();
+    ctx.fillStyle = "#6e4a32";
+    ctx.beginPath();
+    ctx.ellipse(o.x + o.w / 2, o.y + 30, o.w / 2, 30, 0, Math.PI, 0);
+    ctx.fill();
+    const emb = 0.6 + 0.4 * Math.sin(now / 160);
+    ctx.fillStyle = "#180c06";
+    ctx.beginPath();
+    ctx.ellipse(o.x + o.w / 2, o.y + 62, 26, 18, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.fillStyle = `rgba(255,${120 + emb * 80},50,.9)`;
+    ctx.beginPath();
+    ctx.ellipse(o.x + o.w / 2, o.y + 62, 18, 11, 0, Math.PI, 0);
+    ctx.fill();
+    this.pool(o.x + o.w / 2, o.y + 70, 110, `rgba(255,150,70,${0.12 + emb * 0.06})`);
+    for (let kk = 0; kk < 4; kk++) {
+      const sp = this.incense[kk + 6];
+      ctx.globalAlpha = (1 - sp.p) * 0.3;
+      ctx.fillStyle = "#d8d2c8";
+      ctx.beginPath();
+      ctx.arc(o.x + o.w / 2 + Math.sin((sp.p + kk) * 5) * 6, o.y + 14 - sp.p * 50, 2.4 - sp.p * 1.6, 0, 7);
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    // the long communal table — linen runner, candles, plates
+    const t = this.mTable;
+    ctx.fillStyle = "#6e4a2e";
+    this.roundRect(t.x, t.y, t.w, t.h, 6);
+    ctx.fill();
+    ctx.fillStyle = "#efe2c8";
+    ctx.fillRect(t.x + 14, t.y + 10, t.w - 28, t.h - 20);
+    for (let i = 0; i < 4; i++) {
+      const px = t.x + 40 + i * 66;
+      ctx.fillStyle = "#d8cdb8";
+      ctx.beginPath();
+      ctx.arc(px, t.y + t.h / 2, 11, 0, 7);
+      ctx.fill();
+      ctx.fillStyle = "#b8a888";
+      ctx.beginPath();
+      ctx.arc(px, t.y + t.h / 2, 6, 0, 7);
+      ctx.fill();
+    }
+    for (let i = 0; i < 3; i++) {
+      const cxx = t.x + 70 + i * 70;
+      const cf = 0.6 + 0.4 * Math.sin(now / 130 + i * 2.2);
+      ctx.fillStyle = "#e8dcc8";
+      ctx.fillRect(cxx - 2, t.y - 10, 4, 12);
+      ctx.fillStyle = `rgba(255,${180 + cf * 60},90,.95)`;
+      ctx.beginPath();
+      ctx.ellipse(cxx, t.y - 14, 2.5, 5 + cf * 2, 0, 0, 7);
+      ctx.fill();
+      this.pool(cxx, t.y - 8, 46, `rgba(255,190,110,${0.08 + cf * 0.05})`);
+    }
+
+    // pasta station — flour sacks + the namesake rolling pin (il mattarello)
+    for (const sft of this.mFlour) {
+      ctx.fillStyle = "#cfc4ac";
+      this.roundRect(sft.x - 16, sft.y - 10, 32, 24, 6);
+      ctx.fill();
+      ctx.fillStyle = "rgba(90,70,50,.5)";
+      ctx.fillRect(sft.x - 9, sft.y - 4, 18, 3);
+    }
+    ctx.save();
+    ctx.translate(210, 520);
+    ctx.rotate(-0.5);
+    ctx.fillStyle = "#caa06a";
+    this.roundRect(-34, -5, 68, 10, 5);
+    ctx.fill();
+    ctx.fillStyle = "#a8804e";
+    this.roundRect(-46, -4, 12, 8, 4);
+    ctx.fill();
+    this.roundRect(34, -4, 12, 8, 4);
+    ctx.fill();
+    ctx.restore();
+    this.pool(210, 540, 60, "rgba(240,230,210,.05)"); // flour dust in the light
+
+    // the easel — the framed piece IS the attribution link
+    const e = this.mEasel;
+    ctx.strokeStyle = "#4a3424";
+    ctx.lineWidth = 4;
+    ctx.beginPath();
+    ctx.moveTo(e.x - 16, e.y + 18);
+    ctx.lineTo(e.x, e.y - 26);
+    ctx.lineTo(e.x + 16, e.y + 18);
+    ctx.moveTo(e.x, e.y - 10);
+    ctx.lineTo(e.x, e.y + 18);
+    ctx.stroke();
+    ctx.fillStyle = "#1c130b";
+    ctx.fillRect(e.x - 22, e.y - 24, 44, 34);
+    const sun = ctx.createLinearGradient(e.x - 18, e.y - 20, e.x + 18, e.y + 6);
+    sun.addColorStop(0, "#e0875a");
+    sun.addColorStop(1, "#f3dDb8".toLowerCase());
+    ctx.fillStyle = sun;
+    ctx.fillRect(e.x - 18, e.y - 20, 36, 26);
+    ctx.fillStyle = "rgba(20,10,6,.5)";
+    ctx.beginPath();
+    ctx.arc(e.x + 6, e.y - 12, 6, 0, 7); // a little Baja sun
+    ctx.fill();
+    this.pool(e.x, e.y, 70, "rgba(255,190,120,.08)");
+
+    this.namePlate("IL MATTARELLO · 麺棒", "#f3c9a8");
+  }
+
+  /** THE LABYRINTH — a real bamboo-hedge maze grown from LAB_GRID. Lanterns at
+   *  the turns, fireflies, and a stone circle at the hidden centre. */
+  private drawLabyrinth() {
+    const ctx = this.ctx;
+    const now = performance.now();
+
+    // mossy ground
+    ctx.fillStyle = "#243020";
+    ctx.fillRect(0, 0, ROOM.w, ROOM.h);
+    ctx.fillStyle = "rgba(0,0,0,.14)";
+    for (let i = 0; i < 90; i++) {
+      const sx = (i * 173) % ROOM.w;
+      const sy = (i * 257) % ROOM.h;
+      ctx.fillRect(sx, sy, 3, 2);
+    }
+    ctx.fillStyle = "rgba(170,200,140,.05)";
+    for (let i = 0; i < 50; i++) {
+      const sx = (i * 311) % ROOM.w;
+      const sy = (i * 197) % ROOM.h;
+      ctx.fillRect(sx, sy, 2, 2);
+    }
+
+    // the stone circle of the hidden centre chamber
+    ctx.strokeStyle = "rgba(200,210,180,.18)";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.arc(570, 446, 64, 0, 7);
+    ctx.stroke();
+    this.pool(570, 446, 120, "rgba(207,232,168,.07)");
+
+    // hedge blocks straight from the grid — bamboo texture on each
+    for (let r = 0; r < LAB_ROWS; r++)
+      for (let c = 0; c < LAB_COLS; c++) {
+        if (LAB_GRID[r][c] !== "#") continue;
+        const x = WALL + c * LAB_CW;
+        const y = WALL + r * LAB_CH;
+        ctx.fillStyle = "#2c3a22";
+        ctx.fillRect(x, y, LAB_CW + 1, LAB_CH + 1);
+        // lit top edge so walls read in the dark
+        ctx.fillStyle = "#42542e";
+        ctx.fillRect(x, y, LAB_CW + 1, 6);
+        // bamboo stalks
+        ctx.strokeStyle = "rgba(120,150,90,.4)";
+        ctx.lineWidth = 2;
+        for (let bxx = x + 10; bxx < x + LAB_CW - 4; bxx += 14) {
+          ctx.beginPath();
+          ctx.moveTo(bxx, y + 6);
+          ctx.lineTo(bxx, y + LAB_CH - 4);
+          ctx.stroke();
+          ctx.strokeStyle = "rgba(60,80,45,.5)";
+          ctx.beginPath();
+          ctx.moveTo(bxx, y + LAB_CH * 0.4);
+          ctx.lineTo(bxx + 4, y + LAB_CH * 0.4);
+          ctx.stroke();
+          ctx.strokeStyle = "rgba(120,150,90,.4)";
+        }
+      }
+
+    // small stone lanterns at chosen open turns
+    const lanterns = [
+      { x: 120, y: 74 },
+      { x: 980, y: 446 },
+      { x: 460, y: 632 },
+      { x: 660, y: 260 },
+    ];
+    for (const l of lanterns) {
+      const lf = 0.6 + 0.4 * Math.sin(now / 700 + l.x);
+      ctx.fillStyle = "#5a5a52";
+      ctx.fillRect(l.x - 6, l.y - 8, 12, 16);
+      ctx.fillStyle = `rgba(255,214,140,${0.5 + lf * 0.4})`;
+      ctx.fillRect(l.x - 3, l.y - 4, 6, 6);
+      this.pool(l.x, l.y, 60, `rgba(255,200,120,${0.06 + lf * 0.04})`);
+    }
+
+    // fireflies drifting over the hedges
+    ctx.fillStyle = "#eaff9a";
+    for (let i = 0; i < 8; i++) {
+      const a = now / 2600 + i * 1.7;
+      ctx.globalAlpha = 0.25 + 0.4 * Math.abs(Math.sin(a * 1.3));
+      ctx.beginPath();
+      ctx.arc(
+        ROOM.w / 2 + Math.cos(a + i) * (180 + i * 40),
+        ROOM.h / 2 + Math.sin(a * 0.8 + i * 2) * (140 + i * 24),
+        1.8,
+        0,
+        7
+      );
+      ctx.fill();
+    }
+    ctx.globalAlpha = 1;
+
+    this.namePlate("迷路 · THE LABYRINTH", "#cfe8a8");
+  }
+
+  /** THE ARCHIVE — the deep-history vault. Long stacks of records, banker's
+   *  lamps, a card catalogue: where the classics rest. */
+  private drawArchive() {
+    const ctx = this.ctx;
+    const now = performance.now();
+
+    // dark plank floor
+    ctx.fillStyle = "#2a221a";
+    ctx.fillRect(0, 0, ROOM.w, ROOM.h);
+    ctx.strokeStyle = "rgba(0,0,0,.25)";
+    ctx.lineWidth = 1.5;
+    for (let y = 60; y < ROOM.h; y += 46) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(ROOM.w, y);
+      ctx.stroke();
+    }
+
+    // walls with framed plaques (the lineage on the wall)
+    ctx.fillStyle = "#1a140e";
+    ctx.fillRect(0, ROOM.h - WALL, ROOM.w, WALL);
+    ctx.fillRect(0, 0, WALL, ROOM.h);
+    ctx.fillRect(ROOM.w - WALL, 0, WALL, ROOM.h);
+    ctx.fillStyle = "#241c12";
+    ctx.fillRect(0, 0, ROOM.w, WALL + 60);
+    const years = ["1977", "1984", "1986", "1989", "1992", "1997"];
+    years.forEach((yr, i) => {
+      const ax = 130 + i * 150;
+      if (ax > 700 && ax < 880) return; // clear of the labyrinth door
+      ctx.fillStyle = "#0e0a06";
+      ctx.fillRect(ax - 26, WALL + 8, 52, 38);
+      ctx.strokeStyle = "#caa44a";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(ax - 26, WALL + 8, 52, 38);
+      ctx.fillStyle = "#caa44a";
+      ctx.font = "700 13px 'DM Mono',monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(yr, ax, WALL + 29);
+    });
+
+    // the long stacks — shelves of record spines, every sliver a different hue
+    for (const st of this.aStacks) {
+      ctx.fillStyle = "#33402e";
+      ctx.fillRect(st.x - 6, st.y - 8, st.w + 12, st.h + 16);
+      ctx.fillStyle = "#1c2418";
+      ctx.fillRect(st.x, st.y, st.w, st.h);
+      for (let x = st.x + 4; x < st.x + st.w - 4; x += 7) {
+        const hch = (x * 2654435761) % 360;
+        ctx.fillStyle = `hsl(${hch} 28% ${30 + ((x * 7) % 18)}%)`;
+        ctx.fillRect(x, st.y + 4, 5, st.h - 8);
+      }
+      // a few pulled-out sleeves leaning on top
+      ctx.fillStyle = "#caa44a";
+      ctx.fillRect(st.x + 80, st.y - 6, 22, 4);
+      ctx.fillStyle = "#5a86a8";
+      ctx.fillRect(st.x + 320, st.y - 6, 22, 4);
+    }
+
+    // reading table with two banker's lamps (green glass pools)
+    const t = this.aTable;
+    ctx.fillStyle = "#3a2c1c";
+    this.roundRect(t.x, t.y, t.w, t.h, 6);
+    ctx.fill();
+    ctx.fillStyle = "#4a3826";
+    this.roundRect(t.x + 6, t.y + 6, t.w - 12, t.h - 12, 4);
+    ctx.fill();
+    [t.x + 70, t.x + t.w - 70].forEach((lx, i) => {
+      const gl = 0.75 + 0.25 * Math.sin(now / 1200 + i * 2);
+      ctx.fillStyle = "#2c2418";
+      ctx.fillRect(lx - 2, t.y + 8, 4, 14);
+      ctx.fillStyle = "#3f7d5a";
+      this.roundRect(lx - 12, t.y + 2, 24, 9, 4);
+      ctx.fill();
+      this.pool(lx, t.y + 22, 64, `rgba(120,220,160,${0.07 + gl * 0.05})`);
+    });
+    // an open sleeve + 45 on the table
+    ctx.fillStyle = "#d8cdb8";
+    ctx.fillRect(t.x + 130, t.y + 18, 36, 28);
+    ctx.fillStyle = "#181818";
+    ctx.beginPath();
+    ctx.arc(t.x + 186, t.y + 32, 13, 0, 7);
+    ctx.fill();
+    ctx.fillStyle = "#caa44a";
+    ctx.beginPath();
+    ctx.arc(t.x + 186, t.y + 32, 4, 0, 7);
+    ctx.fill();
+
+    // the card catalogue
+    const cg = this.aCatalog;
+    ctx.fillStyle = "#4a3826";
+    ctx.fillRect(cg.x - 22, cg.y - 16, 44, 36);
+    ctx.fillStyle = "#2c2014";
+    for (let j = 0; j < 3; j++)
+      for (let i = 0; i < 2; i++) {
+        ctx.fillRect(cg.x - 18 + i * 20, cg.y - 12 + j * 11, 16, 8);
+        ctx.fillStyle = "#caa44a";
+        ctx.fillRect(cg.x - 12 + i * 20, cg.y - 9 + j * 11, 4, 2);
+        ctx.fillStyle = "#2c2014";
+      }
+
+    // hanging cone lamps over the aisles
+    [300, 570, 840].forEach((lx) => {
+      this.pool(lx, 270, 150, "rgba(255,214,140,.07)");
+      ctx.fillStyle = "#1c130b";
+      ctx.beginPath();
+      ctx.moveTo(lx - 12, 130);
+      ctx.lineTo(lx + 12, 130);
+      ctx.lineTo(lx + 7, 118);
+      ctx.lineTo(lx - 7, 118);
+      ctx.fill();
+    });
+
+    this.namePlate("書庫 · THE ARCHIVE", "#c8e8c8");
   }
 
   /** CURATOR ROOM — Houseum, a cosmic French-house lounge honouring Houseum. A
