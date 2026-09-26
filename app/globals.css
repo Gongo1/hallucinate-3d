@@ -1654,3 +1654,1236 @@ select,
   color: #fff;
   text-shadow: 0 0 12px rgba(201, 126, 93, 0.7);
 }
+
+/* ======================================================================
+   THE GAME LAYER — dig reveal, keeper dialogue, Crate Dex, the map, the
+   arrival sign, toasts. Pokémon-meets-crate-digging, in the kissa palette.
+   ====================================================================== */
+
+/* HUD pills (on touch they collapse behind ☰ with the rest of the topbar) */
+#dexBtn,
+#mapBtn {
+  background: var(--panel);
+  border: 1px solid rgba(255, 179, 94, 0.5);
+  color: var(--cream);
+  border-radius: 10px;
+  padding: 7px 12px;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+#mapBtn {
+  border-color: rgba(122, 184, 216, 0.5);
+}
+#dexBtn:hover {
+  border-color: var(--lantern);
+  color: #fff;
+}
+#mapBtn:hover {
+  border-color: #7ab8d8;
+  color: #fff;
+}
+.dexPillTitle,
+.mapPillCount {
+  font-size: 9px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+/* shared game buttons */
+.gBtn {
+  background: rgba(255, 179, 94, 0.12);
+  border: 1px solid rgba(255, 179, 94, 0.55);
+  color: var(--cream);
+  border-radius: 999px;
+  padding: 10px 18px;
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: background 0.15s, border-color 0.15s, transform 0.15s;
+}
+.gBtn:hover {
+  background: rgba(255, 179, 94, 0.22);
+  border-color: var(--lantern);
+  transform: translateY(-1px);
+}
+.gBtn.primary {
+  background: var(--lantern);
+  color: var(--ink);
+  border-color: var(--lantern);
+  font-family: "Anton", sans-serif;
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  box-shadow: 0 8px 24px rgba(255, 179, 94, 0.36);
+}
+.gBtn.primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+.gBtn.ghost {
+  background: transparent;
+  border-color: rgba(241, 230, 210, 0.28);
+}
+.gBtn.small {
+  padding: 6px 12px;
+  font-size: 11px;
+}
+
+/* pressing tiers — white label + test pressing get a foil shimmer */
+.tierChip {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid currentColor;
+  border-radius: 999px;
+  padding: 3px 10px;
+  font-family: "Anton", sans-serif;
+  font-size: 12px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: rgba(10, 7, 4, 0.72);
+  white-space: nowrap;
+}
+.tierChip.small {
+  padding: 1px 6px;
+  font-size: 9px;
+  letter-spacing: 0.08em;
+}
+.tierChip.foil {
+  background: linear-gradient(
+      110deg,
+      rgba(10, 7, 4, 0.8) 30%,
+      rgba(255, 255, 255, 0.35) 45%,
+      rgba(10, 7, 4, 0.8) 60%
+    )
+    0 0 / 250% 100%;
+  animation: foil 2.4s linear infinite;
+  box-shadow: 0 0 12px currentColor;
+}
+@keyframes foil {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -150% 0;
+  }
+}
+
+/* a record sleeve (reveal + dex) */
+.gSleeve {
+  position: relative;
+  border-radius: 5px;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  box-shadow: 0 22px 56px rgba(0, 0, 0, 0.6);
+  flex: 0 0 auto;
+}
+.gSleeve .vinyl {
+  position: absolute;
+  right: -24%;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 83%;
+  height: 83%;
+  border-radius: 50%;
+  background: repeating-radial-gradient(circle at center, #111 0 2px, #1c1c1c 2px 4px);
+}
+.gSleeve .vinyl::after {
+  content: "";
+  position: absolute;
+  inset: 42%;
+  border-radius: 50%;
+  background: var(--tier, var(--lantern));
+}
+.gSleeve .big {
+  font-family: "Anton", sans-serif;
+  line-height: 0.95;
+  padding: 0 14px;
+  z-index: 2;
+  text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+  word-break: break-word;
+}
+.gSleeve.foil::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: linear-gradient(
+    115deg,
+    transparent 30%,
+    rgba(255, 255, 255, 0.28) 45%,
+    rgba(180, 220, 255, 0.18) 50%,
+    transparent 62%
+  );
+  background-size: 260% 100%;
+  animation: foil 2.8s linear infinite;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+.gSleeveTier {
+  position: absolute;
+  left: 10px;
+  top: 10px;
+  z-index: 4;
+}
+.gSleeve.pop {
+  animation: sleevePop 0.75s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+@keyframes sleevePop {
+  0% {
+    transform: translateY(120px) rotate(-18deg) scale(0.4);
+    opacity: 0;
+  }
+  60% {
+    transform: translateY(-14px) rotate(3deg) scale(1.06);
+    opacity: 1;
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* crate overlay additions: keep + "in dex" + the catch flash */
+.sleeveDex {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 3;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  color: var(--cream);
+  opacity: 0.9;
+}
+#sleeve.caught {
+  animation: caught 0.6s ease;
+}
+@keyframes caught {
+  0% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+  35% {
+    transform: scale(0.92) rotate(-2deg);
+    filter: brightness(1.8);
+  }
+  100% {
+    transform: scale(1);
+    filter: brightness(1);
+  }
+}
+#keepBtn {
+  margin-top: 12px;
+  background: transparent;
+  border: 1px dashed rgba(255, 215, 106, 0.6);
+  color: #ffd76a;
+  border-radius: 999px;
+  padding: 7px 18px;
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+#keepBtn:hover {
+  background: rgba(255, 215, 106, 0.1);
+}
+#keepBtn.kept {
+  border-style: solid;
+  border-color: rgba(126, 155, 94, 0.6);
+  color: var(--moss);
+  filter: brightness(1.3);
+  cursor: default;
+}
+
+/* ----- dig reveal ----- */
+.gReveal {
+  z-index: 44;
+}
+.revealBox {
+  width: min(460px, 92vw);
+  text-align: center;
+  animation: rise 0.3s ease;
+}
+.revealKicker {
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  opacity: 0.85;
+}
+.revealStage {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  margin: 26px auto 14px;
+  display: grid;
+  place-items: center;
+}
+.revealRays {
+  position: absolute;
+  inset: -90px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(
+    from 0deg,
+    color-mix(in srgb, var(--ray) 34%, transparent) 0deg 7deg,
+    transparent 7deg 22deg
+  );
+  mask-image: radial-gradient(circle, #000 18%, transparent 68%);
+  -webkit-mask-image: radial-gradient(circle, #000 18%, transparent 68%);
+  animation: raySpin 14s linear infinite, rayIn 0.6s ease both;
+}
+@keyframes raySpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@keyframes rayIn {
+  from {
+    opacity: 0;
+    scale: 0.3;
+  }
+}
+.revealTier {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: center;
+}
+.revealRare {
+  font-size: 11px;
+  color: #ffd76a;
+  letter-spacing: 0.08em;
+}
+.revealNew {
+  margin-top: 10px;
+  font-size: 10px;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.5;
+}
+.revealNew.on {
+  opacity: 1;
+  color: var(--moss);
+  filter: brightness(1.4);
+}
+.revealArtist {
+  font-size: 13px;
+  opacity: 0.85;
+  margin-top: 12px;
+}
+.revealTitle {
+  font-family: "Anton", sans-serif;
+  font-size: 24px;
+  margin-top: 2px;
+  line-height: 1.1;
+}
+.revealFrom {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-top: 6px;
+}
+.revealActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 20px;
+}
+.revealDust {
+  font-size: 64px;
+  margin: 30px 0 10px;
+  opacity: 0.6;
+  animation: rise 0.6s ease;
+}
+.revealEmpty {
+  font-size: 13px;
+  opacity: 0.8;
+  margin-bottom: 20px;
+}
+.tier-test .revealTitle {
+  color: #ffd76a;
+  text-shadow: 0 0 18px rgba(255, 215, 106, 0.45);
+}
+
+/* ----- keeper dialogue (a Pokémon text box) ----- */
+.dlgScrim {
+  position: fixed;
+  inset: 0;
+  z-index: 43;
+  background: linear-gradient(to top, rgba(8, 5, 3, 0.62), rgba(8, 5, 3, 0) 55%);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 14px calc(22px + env(safe-area-inset-bottom));
+}
+.dlgBox {
+  --accent: var(--lantern);
+  width: min(720px, 100%);
+  display: flex;
+  gap: 16px;
+  align-items: stretch;
+  background: rgba(20, 14, 9, 0.96);
+  border: 2px solid var(--accent);
+  border-radius: 16px;
+  box-shadow: 0 0 0 4px rgba(20, 14, 9, 0.9), 0 0 0 5px color-mix(in srgb, var(--accent) 40%, transparent),
+    0 22px 60px rgba(0, 0, 0, 0.65);
+  padding: 14px 18px 12px 14px;
+  cursor: pointer;
+  animation: dlgIn 0.28s cubic-bezier(0.2, 1.3, 0.4, 1);
+}
+@keyframes dlgIn {
+  from {
+    transform: translateY(30px);
+    opacity: 0;
+  }
+}
+.dlgPortrait {
+  flex: 0 0 auto;
+  width: 96px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: radial-gradient(circle at 50% 65%, color-mix(in srgb, var(--accent) 30%, transparent), transparent 70%);
+}
+.dlgCat {
+  font-size: 58px;
+  filter: drop-shadow(0 0 12px #8a6cff);
+  animation: catBob 2.4s ease-in-out infinite;
+}
+@keyframes catBob {
+  50% {
+    transform: translateY(-4px) rotate(-3deg);
+  }
+}
+.dlgBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.dlgName {
+  font-family: "Anton", sans-serif;
+  font-size: 17px;
+  letter-spacing: 0.06em;
+  color: var(--accent);
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+.dlgTitle {
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  color: var(--cream);
+  opacity: 0.6;
+  letter-spacing: 0.08em;
+}
+.dlgRealm {
+  margin-left: auto;
+  font-family: "Shippori Mincho", serif;
+  font-size: 11px;
+  color: var(--cream);
+  opacity: 0.45;
+  letter-spacing: 0.14em;
+}
+.dlgText {
+  margin-top: 6px;
+  font-size: 15px;
+  line-height: 1.55;
+  min-height: 3.1em;
+  color: var(--cream);
+}
+.dlgGhost {
+  visibility: hidden;
+}
+.dlgFoot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  min-height: 30px;
+}
+.dlgPages {
+  display: flex;
+  gap: 5px;
+}
+.dlgPages i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: rgba(241, 230, 210, 0.22);
+}
+.dlgPages i.on {
+  background: var(--accent);
+}
+.dlgNext {
+  color: var(--accent);
+  opacity: 0;
+  font-size: 12px;
+}
+.dlgNext.on {
+  opacity: 1;
+  animation: nextBob 0.8s ease-in-out infinite;
+}
+@keyframes nextBob {
+  50% {
+    transform: translateY(3px);
+  }
+}
+.dlgActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+/* ----- the Crate Dex ----- */
+.gDex,
+.gMap {
+  z-index: 44;
+}
+.dexBox {
+  width: min(980px, 95vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  background: rgba(20, 14, 9, 0.96);
+  border: 1px solid rgba(255, 179, 94, 0.3);
+  border-radius: 18px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+  animation: rise 0.3s ease;
+}
+.dexHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 22px 14px;
+  border-bottom: 1px solid rgba(241, 230, 210, 0.1);
+  flex-wrap: wrap;
+}
+.dexBrand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dexDisc {
+  font-size: 30px;
+  animation: spin 6s linear infinite;
+  display: inline-block;
+}
+.dexName {
+  font-family: "Anton", sans-serif;
+  font-size: 22px;
+  letter-spacing: 0.1em;
+  color: var(--lantern);
+}
+.dexRank {
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.dexNext {
+  opacity: 0.5;
+  text-transform: none;
+  letter-spacing: 0.04em;
+}
+.dexStats {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.dexStat {
+  text-align: center;
+}
+.dexStatN {
+  font-family: "Anton", sans-serif;
+  font-size: 22px;
+  line-height: 1;
+}
+.dexStatN span {
+  font-size: 12px;
+  opacity: 0.45;
+}
+.dexStatL {
+  font-size: 9px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.55;
+  margin-top: 3px;
+}
+.dexTabs {
+  display: flex;
+  gap: 6px;
+  padding: 12px 18px;
+  overflow-x: auto;
+  border-bottom: 1px solid rgba(241, 230, 210, 0.08);
+  scrollbar-width: thin;
+}
+.dexTab {
+  --accent: var(--lantern);
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-width: 64px;
+  padding: 7px 8px 6px;
+  border-radius: 10px;
+  background: rgba(241, 230, 210, 0.04);
+  border: 1px solid rgba(241, 230, 210, 0.12);
+  color: var(--cream);
+  cursor: pointer;
+  position: relative;
+  font-family: "DM Mono", monospace;
+}
+.dexTab:hover {
+  border-color: var(--accent);
+}
+.dexTab.on {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
+  border-color: var(--accent);
+}
+.dexTab.badge {
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.dexTab.unknown {
+  opacity: 0.55;
+}
+.dexTabKanji {
+  font-family: "Shippori Mincho", serif;
+  font-weight: 800;
+  font-size: 18px;
+  line-height: 1.1;
+  color: var(--accent);
+}
+.dexTab.unknown .dexTabKanji {
+  color: var(--cream);
+}
+.dexTabName {
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+.dexHere {
+  position: absolute;
+  top: -6px;
+  right: -4px;
+  font-size: 8px;
+  background: var(--accent);
+  color: var(--ink);
+  border-radius: 999px;
+  padding: 1px 5px;
+  letter-spacing: 0.08em;
+}
+.dexBody {
+  display: grid;
+  grid-template-columns: 320px minmax(0, 1fr);
+  min-height: 0;
+  flex: 1;
+  overflow: hidden;
+}
+.dexRealm {
+  --accent: var(--lantern);
+  padding: 18px 20px;
+  border-right: 1px solid rgba(241, 230, 210, 0.08);
+  overflow-y: auto;
+  background: radial-gradient(ellipse at 20% 0%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 60%);
+}
+.dexRealmKanji {
+  font-family: "Shippori Mincho", serif;
+  font-weight: 800;
+  font-size: 44px;
+  line-height: 1;
+  color: var(--accent);
+}
+.dexRealmName {
+  font-family: "Anton", sans-serif;
+  font-size: 22px;
+  letter-spacing: 0.08em;
+  margin-top: 6px;
+}
+.dexRealmTag {
+  font-size: 11px;
+  opacity: 0.6;
+  letter-spacing: 0.1em;
+}
+.dexLore {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 12px 0 8px;
+}
+.dexLore.dim {
+  opacity: 0.6;
+}
+.dexSombra {
+  font-size: 12px;
+  line-height: 1.6;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border-left: 2px solid var(--accent);
+  background: rgba(241, 230, 210, 0.04);
+  border-radius: 0 8px 8px 0;
+}
+.dexSombra b {
+  color: #c97e5d;
+  letter-spacing: 0.06em;
+}
+.dexKeeper {
+  font-size: 11px;
+  opacity: 0.7;
+  margin-bottom: 12px;
+}
+.dexCrates {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+.dexCrate {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+}
+.dexCrateTop {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.dexBar {
+  height: 6px;
+  border-radius: 999px;
+  background: rgba(241, 230, 210, 0.08);
+  overflow: hidden;
+}
+.dexBar i {
+  display: block;
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.4s ease;
+}
+.dexBadge {
+  margin-top: 14px;
+  font-size: 11px;
+  opacity: 0.5;
+}
+.dexBadge.on {
+  opacity: 1;
+  color: #ffd76a;
+}
+.dexList {
+  overflow-y: auto;
+  padding: 12px 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.dexRec {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(241, 230, 210, 0.035);
+  border: 1px solid rgba(241, 230, 210, 0.06);
+}
+.dexRec.tier-white {
+  border-color: rgba(233, 236, 255, 0.35);
+}
+.dexRec.tier-test {
+  border-color: rgba(255, 215, 106, 0.5);
+  background: rgba(255, 215, 106, 0.06);
+}
+.dexRecSwatch {
+  width: 30px;
+  height: 30px;
+  border-radius: 4px;
+  flex: 0 0 auto;
+  box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.3);
+}
+.dexRecMeta {
+  flex: 1;
+  min-width: 0;
+}
+.dexRecTitle {
+  font-family: "Anton", sans-serif;
+  font-size: 14px;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dexRecArtist {
+  font-size: 11px;
+  opacity: 0.7;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.dexRecCrate {
+  opacity: 0.6;
+}
+.dexCue,
+.dexOpen {
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  border: 1px solid rgba(241, 230, 210, 0.25);
+  background: transparent;
+  color: var(--cream);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  cursor: pointer;
+  text-decoration: none;
+}
+.dexCue:hover,
+.dexOpen:hover {
+  border-color: var(--lantern);
+  color: var(--lantern);
+}
+.dexCue:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+.dexBuried {
+  margin-top: 6px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px dashed rgba(241, 230, 210, 0.18);
+  font-size: 11px;
+  opacity: 0.7;
+}
+.dexBuried .q {
+  font-family: "Anton", sans-serif;
+  letter-spacing: 0.1em;
+  color: var(--lantern);
+}
+.dexEmpty {
+  font-size: 12px;
+  opacity: 0.6;
+  padding: 10px 2px;
+}
+
+/* ----- the map ----- */
+.mapBox {
+  width: min(1000px, 95vw);
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+  background: radial-gradient(ellipse at 50% 40%, rgba(40, 28, 16, 0.97), rgba(14, 10, 6, 0.98));
+  border: 1px solid rgba(122, 184, 216, 0.3);
+  border-radius: 18px;
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.7);
+  overflow: hidden;
+  animation: rise 0.3s ease;
+}
+.mapHead {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 16px 22px 6px;
+  flex-wrap: wrap;
+}
+.mapName {
+  font-family: "Anton", sans-serif;
+  font-size: 22px;
+  letter-spacing: 0.12em;
+  color: #bfe0ff;
+}
+.mapSub {
+  font-size: 11px;
+  opacity: 0.6;
+  letter-spacing: 0.06em;
+}
+.mapBtns {
+  display: flex;
+  gap: 8px;
+}
+.mapSvg {
+  width: 100%;
+  height: auto;
+  max-height: 70vh;
+  display: block;
+}
+.mapRoad {
+  fill: none;
+  stroke: rgba(241, 230, 210, 0.12);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.mapRoad.known {
+  stroke: rgba(255, 179, 94, 0.42);
+}
+.mapSecret {
+  fill: none;
+  stroke: #ffd76a;
+  stroke-width: 2.5;
+  stroke-dasharray: 3 9;
+  stroke-linecap: round;
+  filter: drop-shadow(0 0 6px rgba(255, 215, 106, 0.7));
+  animation: secretFlow 1.4s linear infinite;
+}
+@keyframes secretFlow {
+  to {
+    stroke-dashoffset: -24;
+  }
+}
+.mapNode {
+  cursor: default;
+}
+.mapNode.visited {
+  cursor: pointer;
+}
+.mapRingBg {
+  fill: none;
+  stroke: rgba(241, 230, 210, 0.08);
+  stroke-width: 5;
+}
+.mapRing {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.mapDot {
+  fill: rgba(26, 18, 11, 0.95);
+  stroke: rgba(241, 230, 210, 0.2);
+  stroke-width: 2;
+  transition: fill 0.2s, stroke 0.2s;
+}
+.mapNode.visited .mapDot {
+  fill: color-mix(in srgb, var(--accent) 26%, #1a120b);
+  stroke: var(--accent);
+}
+.mapNode.visited:hover .mapDot {
+  fill: color-mix(in srgb, var(--accent) 48%, #1a120b);
+}
+.mapNode.badge .mapDot {
+  filter: drop-shadow(0 0 10px var(--accent));
+}
+.mapKanji {
+  text-anchor: middle;
+  font-family: "Shippori Mincho", serif;
+  font-weight: 800;
+  font-size: 22px;
+  fill: rgba(241, 230, 210, 0.5);
+  pointer-events: none;
+}
+.mapNode.visited .mapKanji {
+  fill: var(--cream);
+}
+.mapLabel {
+  text-anchor: middle;
+  font-family: "Anton", sans-serif;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  fill: rgba(241, 230, 210, 0.35);
+  pointer-events: none;
+}
+.mapNode.visited .mapLabel {
+  fill: var(--cream);
+}
+.mapBadge {
+  font-size: 18px;
+  pointer-events: none;
+}
+.mapPulse {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  transform-origin: center;
+  transform-box: fill-box;
+  animation: mapPulse 1.8s ease-out infinite;
+}
+@keyframes mapPulse {
+  from {
+    opacity: 0.9;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.6);
+  }
+}
+.mapInfo {
+  padding: 10px 22px 16px;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  border-top: 1px solid rgba(241, 230, 210, 0.08);
+  min-height: 42px;
+}
+.mapInfo b {
+  color: var(--accent);
+  font-family: "Anton", sans-serif;
+  letter-spacing: 0.08em;
+  font-weight: 400;
+}
+
+/* ----- the arrival sign (Pokémon location banner) ----- */
+.arrival {
+  --accent: var(--lantern);
+  position: fixed;
+  left: 18px;
+  top: 66px;
+  z-index: 27;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  max-width: min(460px, 70vw);
+  padding: 12px 18px 12px 14px;
+  background: rgba(20, 14, 9, 0.92);
+  border: 1px solid color-mix(in srgb, var(--accent) 60%, transparent);
+  border-left: 4px solid var(--accent);
+  border-radius: 12px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
+  pointer-events: none;
+  animation: arriveIn 0.45s cubic-bezier(0.2, 1.3, 0.4, 1) both, arriveOut 0.5s ease 3.1s forwards;
+}
+.arrival.first {
+  animation: arriveIn 0.45s cubic-bezier(0.2, 1.3, 0.4, 1) both, arriveOut 0.5s ease 4.7s forwards;
+}
+@keyframes arriveIn {
+  from {
+    transform: translateX(-40px);
+    opacity: 0;
+  }
+}
+@keyframes arriveOut {
+  to {
+    transform: translateY(-16px);
+    opacity: 0;
+  }
+}
+.arrivalKanji {
+  font-family: "Shippori Mincho", serif;
+  font-weight: 800;
+  font-size: 34px;
+  line-height: 1;
+  color: var(--accent);
+  text-shadow: 0 0 18px color-mix(in srgb, var(--accent) 60%, transparent);
+}
+.arrivalNew {
+  font-size: 9px;
+  letter-spacing: 0.24em;
+  color: #ffd76a;
+  margin-bottom: 2px;
+}
+.arrivalName {
+  font-family: "Anton", sans-serif;
+  font-size: 20px;
+  letter-spacing: 0.1em;
+  line-height: 1.1;
+}
+.arrivalTag {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  opacity: 0.6;
+}
+.arrivalSombra {
+  margin-top: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.85;
+}
+
+/* ----- toasts ----- */
+#toasts {
+  position: fixed;
+  left: 50%;
+  bottom: 76px;
+  transform: translateX(-50%);
+  z-index: 47;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  pointer-events: none;
+  width: max-content;
+  max-width: 92vw;
+}
+.toast {
+  background: rgba(20, 14, 9, 0.95);
+  border: 1px solid rgba(241, 230, 210, 0.25);
+  border-radius: 999px;
+  padding: 9px 18px;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.55);
+  animation: toastIn 0.35s cubic-bezier(0.2, 1.3, 0.4, 1);
+  text-align: center;
+}
+.toast.gold {
+  border-color: rgba(255, 215, 106, 0.7);
+  color: #ffe6a0;
+  box-shadow: 0 0 22px rgba(255, 215, 106, 0.25), 0 12px 34px rgba(0, 0, 0, 0.55);
+}
+.toast.green {
+  border-color: rgba(126, 155, 94, 0.8);
+  color: #d4ecc4;
+}
+.toast.hint {
+  border-color: rgba(255, 179, 94, 0.7);
+  color: var(--lantern);
+}
+@keyframes toastIn {
+  from {
+    transform: translateY(14px) scale(0.95);
+    opacity: 0;
+  }
+}
+
+/* ----- the game layer on phones ----- */
+/* phones: the arrival sign rides just above the stick / E strip (the top is the
+   mini-bar + the prompt), toasts drop from the top where they never cover a
+   sheet's buttons */
+.touch .arrival {
+  left: 12px;
+  right: 12px;
+  top: auto;
+  bottom: calc(172px + env(safe-area-inset-bottom));
+  max-width: none;
+  margin: 0 auto;
+  width: fit-content;
+  padding: 10px 14px 10px 12px;
+  gap: 12px;
+  animation: arriveInT 0.45s ease both, arriveOutT 0.5s ease 3.1s forwards;
+}
+.touch .arrival.first {
+  animation: arriveInT 0.45s ease both, arriveOutT 0.5s ease 4.7s forwards;
+}
+.touch .arrivalKanji {
+  font-size: 28px;
+}
+.touch .arrivalName {
+  font-size: 17px;
+}
+@keyframes arriveInT {
+  from {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+}
+@keyframes arriveOutT {
+  to {
+    transform: translateY(14px);
+    opacity: 0;
+  }
+}
+.touch #toasts {
+  top: calc(118px + env(safe-area-inset-top));
+  bottom: auto;
+}
+/* a keeper is talking — lift the toasts over the text box */
+.dlgOpen #toasts {
+  bottom: 230px;
+}
+.touch .dlgOpen #toasts {
+  bottom: auto;
+}
+.touch .dlgScrim {
+  padding-bottom: calc(150px + env(safe-area-inset-bottom));
+}
+.touch .dlgBox,
+.touch .dlgBox .dlgText {
+  font-size: 14px;
+}
+@media (max-width: 720px) {
+  .dlgBox {
+    gap: 10px;
+    padding: 12px;
+  }
+  .dlgPortrait {
+    width: 70px;
+  }
+  .dlgPortrait canvas {
+    width: 70px !important;
+    height: 70px !important;
+  }
+  .dlgRealm {
+    display: none;
+  }
+  .dlgText {
+    font-size: 14px;
+  }
+  .gDex,
+  .gMap {
+    place-items: stretch;
+  }
+  .dexBox,
+  .mapBox {
+    width: 100vw;
+    max-height: none;
+    height: 100%;
+    border-radius: 0;
+    padding-top: env(safe-area-inset-top);
+  }
+  .dexHead {
+    padding: 50px 16px 10px;
+  }
+  .mapHead {
+    padding: 50px 16px 6px;
+  }
+  .dexStats {
+    gap: 12px;
+  }
+  .dexStatN {
+    font-size: 18px;
+  }
+  .dexBody {
+    grid-template-columns: minmax(0, 1fr);
+    overflow-y: auto;
+  }
+  .dexRealm {
+    border-right: 0;
+    border-bottom: 1px solid rgba(241, 230, 210, 0.08);
+    overflow: visible;
+  }
+  .dexList {
+    overflow: visible;
+  }
+  .mapSvg {
+    max-height: none;
+    flex: 1;
+    min-height: 0;
+  }
+  .mapSvg.portrait .mapKanji {
+    font-size: 26px;
+  }
+  .mapSvg.portrait .mapLabel {
+    font-size: 17px;
+  }
+  .revealStage {
+    width: 170px;
+    height: 170px;
+  }
+  .revealStage .gSleeve {
+    width: 170px !important;
+    height: 170px !important;
+  }
+  .revealTitle {
+    font-size: 19px;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .revealStage {
+    margin: 18px auto 10px;
+  }
+}

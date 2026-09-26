@@ -6,7 +6,28 @@ import type { CuratorRoom } from "../curators";
 export type ActiveRef =
   | { type: "shelf"; id: string }
   | { type: "door"; to: string }
-  | { type: "deck" | "bar" | "portal" | "goldrecord" };
+  | { type: "pile"; idx: number }
+  | { type: "secret"; id: string }
+  | { type: "deck" | "bar" | "portal" | "goldrecord" | "keeper" | "wander" };
+
+/** A clickable thing under the cursor (meshes carry this in userData.pick). */
+export interface PickRef {
+  kind: "shelf" | "door" | "keeper" | "pile" | "secret" | "deck" | "bar" | "portal" | "goldrecord" | "wander";
+  id?: string;
+}
+
+/** The game layer's per-frame state (realms.ts data + your local progress). */
+export interface GameFrame {
+  realm: string;
+  /** per dig pile: can it be dug right now */
+  piles: { ready: boolean }[];
+  /** a dig in progress (t 0..1) */
+  dig: { idx: number; t: number } | null;
+  secretsFound: string[];
+  /** you've already talked to this realm's keeper */
+  talked: boolean;
+  hover: PickRef | null;
+}
 
 /** Per-frame read-only info a room's update() may use for its animation. */
 export interface FrameInfo {
@@ -23,6 +44,8 @@ export interface FrameInfo {
   /** local player position (world px) */
   player: { x: number; y: number };
   camera: THREE.PerspectiveCamera;
+  /** the clickable thing under the mouse (hover highlight) */
+  hover: PickRef | null;
 }
 
 export interface RoomLight {

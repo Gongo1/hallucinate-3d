@@ -341,6 +341,7 @@ export const buildTrattoria: RoomBuilder = ({ room }) => {
   const ez = easel.y;
   const woodM = mat("#4a3424");
   const easelG = new THREE.Group();
+  easelG.userData.pick = { kind: "goldrecord" }; // click the easel → walk up + open their site
   for (const s of [-1, 1]) {
     const leg = box(3.2, 86, 3.2, woodM);
     leg.position.set(easel.x + s * 18, 0, ez + 12);

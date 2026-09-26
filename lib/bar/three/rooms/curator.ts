@@ -332,12 +332,14 @@ export const buildCurator: RoomBuilder = ({ room, curator }) => {
     plinthEdge.position.set(x, 7, y);
     const cap = block({ x: x - s + 6, y: y - s + 6, w: s * 2 - 12, h: s * 2 - 12 }, 3, "#1a1030", 14);
     g.add(plinth, plinthEdge, cap);
+    plinth.userData.pick = { kind: "goldrecord" }; // click it → walk up + open their link
 
     // the stand: the disc leans back a touch so it faces the camera
     const stand = new THREE.Group();
     stand.position.set(x, 17 + r + 8, y);
     stand.rotation.x = -0.42;
     g.add(stand);
+    stand.userData.pick = { kind: "goldrecord" };
     const frameM = ownMat(p.gold, { emissive: p.gold, glow: 0.25 });
     const frame = new THREE.Mesh(new THREE.TorusGeometry(r + 7, 3.2, 5, 28), frameM);
     frame.castShadow = true;

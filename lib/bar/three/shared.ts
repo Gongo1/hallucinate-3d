@@ -367,7 +367,8 @@ export function buildDoor(d: RoomDoor): DoorView {
   return {
     group: g,
     update: (f) => {
-      const on = f.active?.type === "door" && f.active.to === d.to;
+      const on =
+        (f.active?.type === "door" && f.active.to === d.to) || (f.hover?.kind === "door" && f.hover.id === d.to);
       if (on !== wasOn) {
         wasOn = on;
         sign.label.redraw(drawSign(on));
@@ -503,7 +504,8 @@ export function buildCrate(o: CrateObj, st: CrateStyle): CrateView {
     group: g,
     id: d.id,
     update: (f) => {
-      const on = f.active?.type === "shelf" && f.active.id === d.id;
+      const on =
+        (f.active?.type === "shelf" && f.active.id === d.id) || (f.hover?.kind === "shelf" && f.hover.id === d.id);
       edges.visible = on;
       pool.visible = on;
       if (on) (edges.material as THREE.LineBasicMaterial).opacity = 0.6 + 0.4 * Math.sin(f.t * 5);
@@ -562,7 +564,9 @@ function buildIngestCrate(o: CrateObj): CrateView {
       const pulse = 0.5 + 0.5 * Math.sin(f.t / 0.6);
       rimM.emissiveIntensity = 0.5 + pulse * 0.7;
       pm.opacity = 0.14 + pulse * 0.12;
-      edges.visible = f.active?.type === "shelf" && f.active.id === o.data.id;
+      edges.visible =
+        (f.active?.type === "shelf" && f.active.id === o.data.id) ||
+        (f.hover?.kind === "shelf" && f.hover.id === o.data.id);
     },
   };
 }

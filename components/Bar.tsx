@@ -3,7 +3,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { BarEngine } from "@/lib/bar/engine";
-import { drawFit } from "@/lib/bar/three/preview";
 import { BarPlayer, type PlayerState } from "@/lib/bar/player";
 import {
   BarPresence,
@@ -29,6 +28,24 @@ import {
   type Fit,
 } from "@/lib/bar/fits";
 import type { Shelf, Track } from "@/lib/bar/types";
+import { REALMS, REALM_ORDER, SECRETS } from "@/lib/bar/realms";
+import {
+  getProgress,
+  markVisited,
+  markSeen,
+  markDug,
+  markSecret,
+  markTalked,
+  pickDig,
+  recordKey,
+  titleFor,
+} from "@/lib/bar/progress";
+import { AvatarPreview, TierChip, useProgress, type FlowUi } from "@/components/game/shared";
+import { DigReveal, type Reveal } from "@/components/game/DigReveal";
+import { Dialogue } from "@/components/game/Dialogue";
+import { Dex } from "@/components/game/Dex";
+import { WorldMap } from "@/components/game/WorldMap";
+import { ArrivalBanner, Toasts, type Banner, type Toast } from "@/components/game/Hud";
 
 /** one row on the live "Added" board */
 interface AddedRow {
@@ -39,17 +56,6 @@ interface AddedRow {
   scUrl?: string;
   color: string; // adder's dot
   at: number; // created_at ms
-}
-
-/** flow-rule numbers mirrored into the UI (derived from lib/bar/flow.ts) */
-interface FlowUi {
-  myCue: number;
-  cueCap: number;
-  canCue: boolean;
-  skipHave: number;
-  skipNeed: number;
-  cooldownLeft: number;
-  cueWaitLeft: number;
 }
 
 /** "2 min ago" style relative time */
@@ -125,6 +131,16 @@ function weightedPick(
   return pick;
 }
 
+/** the game layer's engine/UI handlers (kept in a ref so callbacks see fresh state) */
+interface GameHandlers {
+  onArrive: (room: string) => void;
+  onDig: (room: string, pileIdx: number) => void;
+  onTalk: (room: string) => void;
+  onSecret: (id: string, first: boolean) => void;
+  toast: (text: string, tone?: Toast["tone"], ms?: number) => void;
+}
+const noop = () => {};
+
 interface CrateState {
   shelf: Shelf;
   idx: number;
@@ -197,10 +213,28 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
   // host bootstrap doesn't restart onto a different random track
   const pendingOpenRef = useRef<{ track: Track; seed: number; index: number } | null>(null);
 
+  // ----- the game layer: digging, keepers, realms, secrets (lib/bar/realms.ts +
+  // your local save in lib/bar/progress.ts). All client-local; cueing still goes
+  // through presence + the flow rules like any crate. -----
+  const progress = useProgress();
+  const [room, setRoom] = useState("kissa");
+  const [reveal, setReveal] = useState<Reveal | null>(null);
+  const [dialogue, setDialogue] = useState<string | null>(null); // the keeper's realm id
+  const [dexOpen, setDexOpen] = useState(false);
+  const [mapOpen, setMapOpen] = useState(false);
+  const [banner, setBanner] = useState<Banner | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+  const toastId = useRef(0);
+  const dialogueAdvanceRef = useRef<(() => void) | null>(null);
+  const dialogueOpenRef = useRef(false);
+  dialogueOpenRef.current = dialogue !== null;
+  const escRef = useRef(false); // the Esc key closes a dialogue instead of paging it
+
   // ----- refs read every frame by the engine (avoid per-frame re-render) -----
   const playingRef = useRef(false);
   const overlayOpenRef = useRef(false);
-  overlayOpenRef.current = crate !== null || ingestOpen;
+  overlayOpenRef.current =
+    crate !== null || ingestOpen || reveal !== null || dialogue !== null || dexOpen || mapOpen;
   const typingRef = useRef(false);
 
   // ----- dom + instance refs -----
@@ -290,8 +324,17 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
         onTogglePlay: () => player.togglePlay(), // local mute toggle
         onNext: () => presenceRef.current?.skip(), // skip the whole room
         onCloseOverlays: () => {
+          // E / tap while a keeper is talking turns the page (Esc still closes)
+          if (dialogueOpenRef.current && !escRef.current) {
+            dialogueAdvanceRef.current?.();
+            return;
+          }
           setCrate(null);
           setIngestOpen(false);
+          setReveal(null);
+          setDialogue(null);
+          setDexOpen(false);
+          setMapOpen(false);
         },
         isOverlayOpen: () => overlayOpenRef.current,
         isPlaying: () => playingRef.current,
@@ -309,7 +352,12 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
         onRoomChange: (roomId) => {
           presenceRef.current?.setRoom(roomId);
           engineRef.current?.setShelves(shelvesRef.current);
+          gameRef.current.onArrive(roomId);
         },
+        // the game layer — handlers live in gameRef so they always see fresh state
+        onDig: (roomId, idx) => gameRef.current.onDig(roomId, idx),
+        onTalk: (roomId) => gameRef.current.onTalk(roomId),
+        onSecret: (id, first) => gameRef.current.onSecret(id, first),
       },
     });
     engineRef.current = engine;
@@ -327,6 +375,11 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
     const initialFit = loadFit() ?? randomFit();
     setFit(initialFit);
     engine.setPlayerFit(initialFit);
+
+    // your save: which secret hatches you've found + which keepers you've met
+    const saved = getProgress();
+    engine.setSecretsFound(Object.keys(saved.secrets));
+    engine.setTalked(Object.keys(saved.talked));
 
     // Join the lobby channel immediately, but only LURKING (not tracked as
     // present, so no ghost listeners): by the time the user taps to enter, the
@@ -495,6 +548,15 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
 
     // become a live character others can see (lurker → listener)
     p?.materialize();
+
+    // stamp the hub; first-timers get pointed at the scout
+    const firstRun = Object.keys(getProgress().visited).length === 0;
+    gameRef.current.onArrive("kissa");
+    if (firstRun)
+      setTimeout(() => {
+        if (!getProgress().talked.kissa)
+          gameRef.current.toast("Talk to Rio (!) — or click a glinting pile to dig", "hint", 7000);
+      }, 3600);
   }, []);
 
   // the tap-to-listen pill: restart blocked audio inside a fresh tap, re-seeking
@@ -515,6 +577,133 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
     engineRef.current?.setPlayerFit(f);
     presenceRef.current?.setFit(f);
   }, []);
+
+  // ----- the game layer -----
+  const toast = useCallback((text: string, tone: Toast["tone"] = "plain", ms = 4200) => {
+    const id = ++toastId.current;
+    setToasts((t) => [...t.slice(-3), { id, text, tone }]);
+    setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), ms);
+  }, []);
+  /** celebrate a newly reached digger title */
+  const titleCheck = useCallback(
+    (before: number) => {
+      const now = Object.keys(getProgress().dug).length;
+      const a = titleFor(before);
+      const b = titleFor(now);
+      if (a !== b) toast(`🎖 You're a ${b} now — ${now} records dug`, "gold", 5200);
+    },
+    [toast]
+  );
+  /** keep a record in your dex (from a crate / a cue), with the celebrations */
+  const keep = useCallback(
+    (t: Track, shelf: Shelf) => {
+      const before = Object.keys(getProgress().dug).length;
+      const res = markDug(t, shelf, shelf.room ?? "kissa", shelvesRef.current);
+      if (res.badge) toast(`🏅 Realm badge — ${REALMS[res.badge]?.name ?? res.badge}`, "gold", 5200);
+      if (res.isNew) titleCheck(before);
+      return res;
+    },
+    [toast, titleCheck]
+  );
+  const gameRef = useRef<GameHandlers>({
+    onArrive: noop,
+    onDig: noop,
+    onTalk: noop,
+    onSecret: noop,
+    toast: noop,
+  });
+  gameRef.current = {
+    onArrive: (r) => {
+      setRoom(r);
+      const { first } = markVisited(r);
+      const stamped = REALM_ORDER.filter((id) => getProgress().visited[id]).length;
+      setBanner({ key: Date.now(), room: r, first, stamped });
+      if (first && r !== "kissa") toast(`✦ New realm stamped — ${stamped}/${REALM_ORDER.length}`, "green");
+    },
+    onDig: (r) => {
+      setToasts((t) => t.filter((x) => x.tone !== "hint")); // they found the piles — hint done
+      const pick = pickDig(r, shelvesRef.current);
+      if (!pick) {
+        setReveal({ kind: "empty", room: r });
+        return;
+      }
+      const before = Object.keys(getProgress().dug).length;
+      const res = markDug(pick.track, pick.shelf, r, shelvesRef.current);
+      setReveal({ kind: "record", room: r, track: pick.track, shelf: pick.shelf, entry: res.entry, isNew: res.isNew });
+      if (res.badge) toast(`🏅 Realm badge — ${REALMS[res.badge]?.name ?? res.badge}`, "gold", 5200);
+      if (res.isNew) titleCheck(before);
+    },
+    onTalk: (r) => {
+      if (!REALMS[r]) return;
+      setToasts((t) => t.filter((x) => x.tone !== "hint")); // they found Rio — hint done
+      setDialogue(r);
+      markTalked(r);
+      engineRef.current?.setTalked(Object.keys(getProgress().talked));
+    },
+    onSecret: (id, first) => {
+      if (first) {
+        markSecret(id);
+        const sec = SECRETS.find((x) => x.id === id);
+        toast(`✦ Secret passage found — ${sec?.name ?? id}`, "gold", 5200);
+      }
+      engineRef.current?.setSecretsFound(Object.keys(getProgress().secrets));
+    },
+    toast,
+  };
+  const travel = useCallback((id: string) => {
+    setMapOpen(false);
+    setDexOpen(false);
+    engineRef.current?.travelTo(id);
+  }, []);
+  const wander = useCallback(() => {
+    setMapOpen(false);
+    setDexOpen(false);
+    setDialogue(null);
+    const id = engineRef.current?.wander();
+    if (id) toast("🎲 wandering…", "plain", 1800);
+  }, [toast]);
+
+  // hotkeys: M map · C crate dex · R wander · Enter pages a keeper. Never while
+  // typing in chat, and only over the game's own overlays.
+  useEffect(() => {
+    const onEsc = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return;
+      escRef.current = true;
+      setTimeout(() => (escRef.current = false), 0);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (typingRef.current || !startedRef.current) return;
+      const k = e.key.toLowerCase();
+      if (k === "enter" && dialogueOpenRef.current) {
+        e.preventDefault();
+        dialogueAdvanceRef.current?.();
+        return;
+      }
+      const blocked = crate !== null || ingestOpen || reveal !== null || dialogue !== null || fitOpen;
+      if (k === "m" && !blocked) {
+        setDexOpen(false);
+        setMapOpen((o) => !o);
+      } else if (k === "c" && !blocked) {
+        setMapOpen(false);
+        setDexOpen((o) => !o);
+      } else if (k === "r" && !blocked && !dexOpen && !mapOpen) {
+        wander();
+      }
+    };
+    addEventListener("keydown", onEsc, true); // before the engine's handler
+    addEventListener("keydown", onKey);
+    return () => {
+      removeEventListener("keydown", onEsc, true);
+      removeEventListener("keydown", onKey);
+    };
+  }, [crate, ingestOpen, reveal, dialogue, fitOpen, dexOpen, mapOpen, wander]);
+
+  // the arrival sign fades itself out
+  useEffect(() => {
+    if (!banner) return;
+    const t = setTimeout(() => setBanner(null), banner.first ? 5200 : 3600);
+    return () => clearTimeout(t);
+  }, [banner]);
 
   // ----- chat / reactions -----
   const sendChat = useCallback((text: string) => {
@@ -552,11 +741,12 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
       for (const r of recs) {
         if (!p.canCue()) break;
         p.cue(r);
+        keep(r, crate.shelf); // cueing a record keeps it in your dex
       }
       refreshFlowUi();
       setCrate(null);
     },
-    [crate, refreshFlowUi]
+    [crate, refreshFlowUi, keep]
   );
   const cueTrack = useCallback(
     (t: Track) => {
@@ -592,7 +782,7 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
   const soloMode = roster <= 1;
 
   return (
-    <div id="wrap">
+    <div id="wrap" className={dialogue ? "dlgOpen" : ""}>
       <canvas ref={canvasRef} id="c" />
 
       <div id="topbar" className={menuOpen ? "open" : ""}>
@@ -636,6 +826,36 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
         </button>
         {started && (
           <button
+            id="dexBtn"
+            onClick={() => {
+              setMapOpen(false);
+              setDexOpen(true);
+              setMenuOpen(false);
+            }}
+            title="your Crate Dex — every record you've dug (C)"
+          >
+            💿 {Object.keys(progress.dug).length}
+            <span className="dexPillTitle">{titleFor(Object.keys(progress.dug).length)}</span>
+          </button>
+        )}
+        {started && (
+          <button
+            id="mapBtn"
+            onClick={() => {
+              setDexOpen(false);
+              setMapOpen(true);
+              setMenuOpen(false);
+            }}
+            title="the map of the realms — fast travel (M)"
+          >
+            🗺 map
+            <span className="mapPillCount">
+              {REALM_ORDER.filter((r) => progress.visited[r]).length}/{REALM_ORDER.length}
+            </span>
+          </button>
+        )}
+        {started && (
+          <button
             id="fitBtn"
             onClick={() => {
               setFitOpen(true);
@@ -655,7 +875,9 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           ☉☽
         </a>
         <div id="hint">
-          WASD · move &nbsp; E · browse
+          WASD · move &nbsp; ⇧ · sprint &nbsp; CLICK · anything
+          <br />
+          E · dig · talk · browse &nbsp; M · map &nbsp; C · dex &nbsp; R · wander
           <br />
           SPACE · mute me &nbsp; N · skip room
         </div>
@@ -701,10 +923,66 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           crate={crate}
           flow={flowUi}
           solo={soloMode}
+          dug={progress.dug}
           onClose={() => setCrate(null)}
           onFlip={flip}
           onPlay={() => cueFromCrate(crate.idx, false)}
           onPlayShelf={() => cueFromCrate(0, true)}
+          onKeep={(t) => keep(t, crate.shelf)}
+        />
+      )}
+
+      {/* ----- the game layer ----- */}
+      {banner && <ArrivalBanner banner={banner} />}
+      <Toasts toasts={toasts} />
+      {reveal && (
+        <DigReveal
+          reveal={reveal}
+          flow={flowUi}
+          solo={soloMode}
+          onCue={cueTrack}
+          onClose={() => setReveal(null)}
+        />
+      )}
+      {dialogue && (
+        <Dialogue
+          room={dialogue}
+          advanceRef={dialogueAdvanceRef}
+          onClose={() => setDialogue(null)}
+          onMap={() => {
+            setDialogue(null);
+            setMapOpen(true);
+          }}
+          onWander={wander}
+        />
+      )}
+      {dexOpen && (
+        <Dex
+          progress={progress}
+          shelves={shelves}
+          room={room}
+          flow={flowUi}
+          solo={soloMode}
+          onCue={cueTrack}
+          onClose={() => setDexOpen(false)}
+          onMap={() => {
+            setDexOpen(false);
+            setMapOpen(true);
+          }}
+        />
+      )}
+      {mapOpen && (
+        <WorldMap
+          progress={progress}
+          shelves={shelves}
+          room={room}
+          onTravel={travel}
+          onWander={wander}
+          onClose={() => setMapOpen(false)}
+          onDex={() => {
+            setMapOpen(false);
+            setDexOpen(true);
+          }}
         />
       )}
 
@@ -784,13 +1062,16 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           <div id="howto">
             <span className="deskOnly">
               <span className="key">WASD</span> walk &nbsp;·&nbsp;{" "}
-              <span className="key">CLICK</span> walk-to &nbsp;·&nbsp;{" "}
-              <span className="key">E</span> browse a shelf
+              <span className="key">CLICK</span> anything to go use it &nbsp;·&nbsp;{" "}
+              <span className="key">E</span> dig · talk · browse
             </span>
             <span className="touchOnly">
-              drag the <b>stick</b> to walk &nbsp;·&nbsp; tap{" "}
-              <span className="key">E</span> to browse a shelf
+              drag the <b>stick</b> or tap anything &nbsp;·&nbsp; tap{" "}
+              <span className="key">E</span> to dig · talk · browse
             </span>
+            <br />
+            <b style={{ color: "var(--lantern)" }}>dig the realms for records</b> — every find
+            lands in your <b>Crate Dex</b>
             <br />
             <b style={{ color: "var(--lantern)" }}>
               everyone here hears the same track
@@ -1010,21 +1291,31 @@ function Crate({
   crate,
   flow,
   solo,
+  dug,
   onClose,
   onFlip,
   onPlay,
   onPlayShelf,
+  onKeep,
 }: {
   crate: CrateState;
   flow: FlowUi;
   solo: boolean;
+  dug: ReturnType<typeof getProgress>["dug"];
   onClose: () => void;
   onFlip: (d: number) => void;
   onPlay: () => void;
   onPlayShelf: () => void;
+  onKeep: (t: Track) => void;
 }) {
   const { shelf, idx } = crate;
   const rec = shelf.records[idx];
+  const kept = dug[recordKey(rec)];
+  const [caught, setCaught] = useState<string | null>(null);
+  // flipping to a record counts as seeing it (the Dex's "seen")
+  useEffect(() => {
+    markSeen(rec);
+  }, [rec]);
   const col = shelf.color;
   const big = (rec.artist || rec.title).split(/[\s&]/)[0].toUpperCase();
   const atCap = !flow.canCue;
@@ -1054,6 +1345,8 @@ function Crate({
         <div id="sleeveWrap">
           <div
             id="sleeve"
+            key={recordKey(rec)}
+            className={caught === recordKey(rec) ? "caught" : ""}
             style={{
               background: `linear-gradient(135deg, ${col}, ${shade(col, -58)})`,
             }}
@@ -1063,6 +1356,12 @@ function Crate({
             <div className="big" style={{ color: shade(col, 95) }}>
               {big}
             </div>
+            {kept && (
+              <div className="sleeveDex">
+                <TierChip tier={kept.tier} small />
+                <span>IN DEX</span>
+              </div>
+            )}
           </div>
         </div>
         <div id="sleeveArtist">{rec.artist || "—"}</div>
@@ -1078,6 +1377,18 @@ function Crate({
             ›
           </button>
         </div>
+        <button
+          id="keepBtn"
+          className={kept ? "kept" : ""}
+          onClick={() => {
+            if (kept) return;
+            onKeep(rec);
+            setCaught(recordKey(rec));
+          }}
+          title="keep it in your Crate Dex (no cue needed)"
+        >
+          {kept ? "✓ in your dex" : "✦ keep"}
+        </button>
         <div id="crateMeta">
           {idx + 1} / {shelf.records.length}
         </div>
@@ -1330,34 +1641,7 @@ function AddedBoard({
 }
 
 /* ------------------------------------------------------------ fit */
-// The fit preview: the same low-poly character the room renders (one shared
-// WebGL renderer copies into this canvas — see lib/bar/three/preview.ts). The big
-// stage preview idles + turns; the tiny intro icon is a still.
-function AvatarPreview({ fit, size = 96, animate = false }: { fit: Fit; size?: number; animate?: boolean }) {
-  const ref = useRef<HTMLCanvasElement>(null);
-  useEffect(() => {
-    const cv = ref.current;
-    if (!cv) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    cv.width = Math.round(size * dpr);
-    cv.height = Math.round(size * dpr);
-    let raf = 0;
-    const t0 = performance.now();
-    const draw = () => {
-      drawFit(cv, fit, (performance.now() - t0) / 1000, animate);
-      if (animate) raf = requestAnimationFrame(draw);
-    };
-    draw();
-    return () => cancelAnimationFrame(raf);
-  }, [fit, size, animate]);
-  return (
-    <canvas
-      ref={ref}
-      style={{ width: size, height: size, display: "block", flex: "0 0 auto" }}
-      aria-hidden="true"
-    />
-  );
-}
+// (AvatarPreview — the live 3D fit portrait — lives in components/game/shared.tsx)
 
 function Swatch({
   color,

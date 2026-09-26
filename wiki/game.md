@@ -1,0 +1,34 @@
+# The digging game (Sep 2026)
+
+HALLUCINATE plays like **Pokémon meets crate-digging**. Each room is a *realm* with a keeper who explains it (and how it ties to Sombra), dig piles that turn up records, and secret passages to far-off realms. Everything you find goes into your **Crate Dex**. The point is still to find music: digging only *reveals* records from the realm's own crates, and cueing still goes through the shared queue and flow rules.
+
+## Modules
+| File | What it holds |
+|---|---|
+| `lib/bar/realms.ts` | Data for all 12 realms: name/kanji/tagline, lore, the **Sombra connection** line, the keeper (name, look, dialogue), 2 dig piles, the world-map position. Also the 3 `SECRETS` (hatch pairs) and `WANDER_CAT` (the Kissa's lucky cat). |
+| `lib/bar/progress.ts` | Your save file (localStorage `hallucinate-progress-v1`): realms visited, records seen and dug, secrets, keepers met, badges. It also covers tiers, titles and `pickDig()`. |
+| `lib/bar/engine.ts` | Game zones (`pile`, `keeper`, `secret`, `wander`), the dig timer and pile rest, click-to-use with grid A* pathfinding, walk-through doors, sprint, `travelTo()` / `wander()`. |
+| `lib/bar/three/game.ts` | 3D for the game layer: dig mounds with loot beams and sparkles, the keeper's `!`/`…` bubble, secret hatches, the maneki-neko. |
+| `components/` (Bar.tsx + game UI) | Dig reveal card, keeper dialogue, Crate Dex (C), world map (M), arrival banners, toasts. |
+
+## Rules of play
+- **Dig:** stand on a glinting pile and press E (or click it). After ~0.8s a record from that realm's crates pops out, preferring ones you haven't dug or seen. The pile then rests for 40s.
+- **Tiers:** Reissue, First Press, White Label, Test Pressing (58/27/11/4%). The tier is rolled from the record's key, so it's the same for every player. It's flavour, not a claim about real-world rarity.
+- **Keep:** the crate browser's "✦ keep" also catches a record into the Dex, and cueing a record counts too.
+- **Badges:** you earn a realm badge by digging 5 records from that realm (or all of them, if it has fewer). **Titles** come from your total dug: Newcomer, Crate Flipper, Digger, Selector, Head, Archivist, Legend.
+- **Secrets:**
+  - The three passages are the Hollow Stack (Archive ↔ Berlin), the Lighthouse Stair (La Playa ↔ Skyline) and the Oven Door (Il Mattarello ↔ Houseum).
+  - The first E on either hatch discovers the passage. Keepers drop hints.
+- **Travel:**
+  - You walk *into* a doorway to go through (E still works).
+  - The map fast-travels to any realm you've visited.
+  - The lucky cat, the map's dice and the R key all send you to a random realm.
+- **Movement:** speed is 240 (Shift sprints ×1.5, and clicked routes ×1.3). Clicking the floor or a thing routes around fixtures, and clicking a thing also uses it on arrival. The rave portal still needs an explicit E, per its rule.
+
+## Guardrails
+- Keep the placements valid:
+  - Piles, keepers and hatches must sit on open floor, away from other zones, and be reachable by path from every spawn.
+  - Re-run the geometry check after moving any of them. It jumps to each realm through the dev hook and path-tests every game zone from every spawn.
+  - Arrivals are nudged to the nearest free spot (`freeSpot`), so a spawn can never trap you inside a fixture.
+- The engine still references no music, sync or flow symbols. `onDig` hands the host a realm and a pile index, and the host picks the record.
+- Tribute rooms (Houseum, Il Mattarello) keep attribution language. Their keepers say "tribute" and never "partner".

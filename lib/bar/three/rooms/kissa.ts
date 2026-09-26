@@ -174,7 +174,9 @@ export const buildKissa: RoomBuilder = ({ room }) => {
   g.add(glowPool(pf.x + pf.w / 2, pf.y + pf.h / 2, 300, "#ffc878", 0.1));
 
   /* ---------------- listening deck (front) */
-  g.add(block(deck, 34, "#5b3f23"));
+  const deckBody = block(deck, 34, "#5b3f23");
+  deckBody.userData.pick = { kind: "deck" };
+  g.add(deckBody);
   const deckTop = block({ x: deck.x - 3, y: deck.y - 3, w: deck.w + 6, h: deck.h + 6 }, 4, "#6e4d2c", 34);
   g.add(deckTop);
   const deckLabel = panel(160, 16, (c, w, h) => {
@@ -307,7 +309,9 @@ export const buildKissa: RoomBuilder = ({ room }) => {
 
   /* ---------------- the pour-over bar (right wall) + the master's back shelf */
   const counter = { x: bar.x, y: bar.y, w: 44, h: bar.h };
-  g.add(block(counter, 42, "#5b3f23"));
+  const counterBody = block(counter, 42, "#5b3f23");
+  counterBody.userData.pick = { kind: "bar" };
+  g.add(counterBody);
   g.add(block({ x: counter.x - 4, y: counter.y - 4, w: counter.w + 8, h: counter.h + 8 }, 5, "#7a5634", 42));
   g.add(block({ x: bar.x + bar.w - 18, y: bar.y - 10, w: 30, h: bar.h + 20 }, 96, "#3e2a17"));
   for (const sy of [36, 64]) g.add(block({ x: bar.x + bar.w - 24, y: bar.y, w: 12, h: bar.h }, 3, "#6e4d2c", sy));
@@ -601,6 +605,7 @@ function buildPortal(anim: ((f: import("../types").FrameInfo) => void)[]): THREE
   t.add(frame);
 
   t.position.set(cx - w / 2 + 16, 0, cy);
+  t.userData.pick = { kind: "portal" }; // click walks you up to it — the charge still wants E
   g.add(t);
   const pool = glowPool(cx + 30, cy, 170, "#965aff", 0.3);
   g.add(pool);

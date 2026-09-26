@@ -5,9 +5,10 @@ import type { Fit } from "../fits";
 import { ROOM, crateStyleFor } from "../layout";
 import { Character, yawOf, type CharState } from "./character";
 import { buildCrate, buildDoor, type CrateObj, type CrateView, type DoorView } from "./shared";
+import { buildGameLayer, type GameLayer } from "./game";
 import { disposeTree, hex } from "./kit";
 import { ROOM_BUILDERS } from "./rooms";
-import type { ActiveRef, FrameInfo, RoomView } from "./types";
+import type { ActiveRef, FrameInfo, GameFrame, PickRef, RoomView } from "./types";
 
 // THE 3D VIEW. Owns the WebGL canvas, camera, lights, the current room's meshes,
 // the crates + doors, every character, and the screen-space finish (time-of-day
@@ -26,6 +27,10 @@ export interface Actor {
   /** a fixed heading (seated / the master) instead of face-where-you-walk */
   yaw?: number;
   player?: boolean;
+  /** clickable (keepers) */
+  pick?: PickRef;
+  /** mid-dig: crouched, arms working the pile */
+  digging?: boolean;
 }
 
 export interface FrameState {
@@ -43,6 +48,7 @@ export interface FrameState {
   phaseGlow: readonly number[];
   /** 0..1 joystick tilt for the player's stride */
   speed: number;
+  game: GameFrame;
 }
 
 const FOV = 36;
@@ -102,6 +108,9 @@ export class World3D {
   private chars = new Map<string, { c: Character; x: number; y: number; seen: boolean }>();
   private roomDef: RoomDef | null = null;
   private dancers = false;
+  private game: GameLayer | null = null;
+  /** everything clickable in the current room (crates, doors, keepers, piles…) */
+  private pickables: THREE.Object3D[] = [];
 
   private W = 1;
   private H = 1;
@@ -199,10 +208,17 @@ export class World3D {
     this.dancers = !!view.dancers;
     const g = new THREE.Group();
     g.add(view.group);
-    this.doors = room.doors.map((d) => buildDoor(d));
+    this.doors = room.doors.map((d) => {
+      const v = buildDoor(d);
+      v.group.userData.pick = { kind: "door", id: d.to } satisfies PickRef;
+      return v;
+    });
     for (const d of this.doors) g.add(d.group);
+    this.game = buildGameLayer(room.id);
+    g.add(this.game.group);
     this.roomGroup = g;
     this.scene.add(g);
+    this.collectPickables();
 
     // lighting + atmosphere for this room
     const L = view.light;
@@ -227,7 +243,38 @@ export class World3D {
     }
     const st = crateStyleFor(scene);
     this.crates = objs.map((o) => buildCrate(o, st));
-    for (const c of this.crates) this.crateGroup.add(c.group);
+    for (const c of this.crates) {
+      c.group.userData.pick = { kind: "shelf", id: c.id } satisfies PickRef;
+      this.crateGroup.add(c.group);
+    }
+    this.collectPickables();
+  }
+
+  /** Gather the clickable roots: tagged scenery (deck, easel, gold record…),
+   *  doors, crates, and the game layer. Characters are tagged per frame. */
+  private collectPickables() {
+    const list: THREE.Object3D[] = [];
+    this.roomGroup?.traverse((o) => {
+      if (o.userData.pick) list.push(o);
+    });
+    for (const c of this.crates) list.push(c.group);
+    this.pickables = list;
+  }
+
+  /** The clickable thing under a screen point (nearest tagged hit), if any. */
+  pick(clientX: number, clientY: number): PickRef | null {
+    const r = this.canvas.getBoundingClientRect();
+    const ndc = new THREE.Vector2(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
+    this.ray.setFromCamera(ndc, this.camera);
+    const roots = [...this.pickables];
+    for (const [id, e] of this.chars) if (id.startsWith("keeper:")) roots.push(e.c.root);
+    const hits = this.ray.intersectObjects(roots, true);
+    for (const h of hits) {
+      for (let o: THREE.Object3D | null = h.object; o; o = o.parent) {
+        if (o.userData.pick) return o.userData.pick as PickRef;
+      }
+    }
+    return null;
   }
 
   /* ----------------------------------------------------------- input */
@@ -276,8 +323,10 @@ export class World3D {
       onAirDj: s.onAirDj,
       player: this.playerPos(s),
       camera: this.camera,
+      hover: s.game.hover,
     };
     this.roomView?.update?.(info);
+    this.game?.update(info, s.game);
     for (const d of this.doors) d.update(info);
     for (const c of this.crates) c.update(info);
 
@@ -332,6 +381,7 @@ export class World3D {
       if (!e) {
         const c = new Character(a.fit, { player: a.player });
         c.faceNow(a.yaw ?? 0);
+        if (a.pick) c.root.userData.pick = a.pick;
         e = { c, x: a.x, y: a.y, seen: true };
         this.chars.set(a.id, e);
         this.scene.add(c.root);
@@ -346,13 +396,18 @@ export class World3D {
       e.x = a.x;
       e.y = a.y;
       e.c.root.position.set(a.x, this.roomView?.floorAt?.(a.x, a.y) ?? 0, a.y);
+      const keeper = a.id.startsWith("keeper:");
+      const near = keeper && Math.hypot(a.x - this.playerPos(s).x, a.y - this.playerPos(s).y) < 190;
       const st: CharState = {
         moving: a.moving,
         yaw,
         sitting: a.sitting,
-        dancer: this.dancers && !a.player && !a.id.startsWith("r:"),
+        dancer: this.dancers && !a.player && !keeper && !a.id.startsWith("r:"),
         playing: s.playing,
         speed: a.player ? s.speed : 1,
+        digging: a.digging,
+        // keepers you haven't met wave you over
+        waving: near && !s.game.talked,
       };
       e.c.update(s.t, s.dt, st);
     }

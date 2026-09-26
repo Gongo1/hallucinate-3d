@@ -11,6 +11,7 @@ This is the curated knowledge base; one-off session artifacts live in `../output
 - [Overview](overview.md) — what the product is, the nested-worlds story, the stack
 - [Architecture](architecture.md) — modules, the one-shared-stream model, data flow
 - [Rooms](rooms.md) — room-as-data registry, the Garden, doors/transitions
+- [The digging game](game.md) — realms, keepers, dig piles, Crate Dex, secrets, map + fast travel
 - [Shared player & flow rules](playback-and-flow.md) — synced room audio, cue/skip/cooldown, the P-scaling limits
 - [God mode & ON AIR](god-mode.md) — owner /booth, server-verified admin, ON AIR primitive
 - [Music library & curation](music-library.md) — catalog, the import pipeline, the house-only + ask-first rules

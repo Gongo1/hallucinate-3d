@@ -8,7 +8,8 @@ import {
   DIG_SPOTS, type DigSpot,
 } from "./layout";
 import { World3D, type Actor } from "./three/world";
-import type { ActiveRef } from "./three/types";
+import type { ActiveRef, PickRef } from "./three/types";
+import { REALMS, WANDER_CAT, secretsIn } from "./realms";
 
 // The whole game, ported from prototype.html — rooms, fixtures, NPCs, input
 // (WASD / click / joystick), collision, zone proximity, and the rAF loop.
@@ -44,7 +45,13 @@ type Zone =
   | { type: "bar"; cx: number; cy: number; r: number }
   | { type: "portal"; cx: number; cy: number; r: number }
   | { type: "goldrecord"; cx: number; cy: number; r: number; url: string; label?: string }
-  | { type: "door"; cx: number; cy: number; r: number; door: RoomDoor };
+  | { type: "door"; cx: number; cy: number; r: number; door: RoomDoor }
+  // the game layer (lib/bar/realms.ts): dig piles, the realm's keeper, secret
+  // passages, and the Kissa's lucky cat
+  | { type: "pile"; cx: number; cy: number; r: number; idx: number }
+  | { type: "keeper"; cx: number; cy: number; r: number }
+  | { type: "secret"; cx: number; cy: number; r: number; id: string; name: string; to: string; spawn: { x: number; y: number } }
+  | { type: "wander"; cx: number; cy: number; r: number };
 
 interface Entity {
   x: number;
@@ -86,6 +93,13 @@ export interface EngineCallbacks {
   onOpenExternal: (url: string) => void;
   /** the player moved to another venue room (scenery only — audio is unchanged) */
   onRoomChange: (roomId: string) => void;
+  /** a dig finished at pile `pileIdx` in `roomId` — the host picks + reveals a
+   *  record from that realm's crates (the engine never touches music) */
+  onDig?: (roomId: string, pileIdx: number) => void;
+  /** talk to this realm's keeper */
+  onTalk?: (roomId: string) => void;
+  /** stepped into a secret passage (`firstTime` = just discovered it) */
+  onSecret?: (secretId: string, firstTime: boolean) => void;
 }
 
 interface EngineOpts {
@@ -99,6 +113,13 @@ interface EngineOpts {
 
 /** rave-portal pull-through charge length (ms) — explicit, cancelable intent */
 const PORTAL_CHARGE_MS = 800;
+/** how long a dig takes (s) and how long a pile rests before it can be dug again (ms) */
+const DIG_TIME = 0.8;
+const PILE_REST_MS = 40_000;
+/** pathfinding grid cell (world px) */
+const CELL = 16;
+const GW = Math.ceil(ROOM.w / CELL);
+const GH = Math.ceil(ROOM.h / CELL);
 
 // the ambient kissa regulars (fixed looks — the seated pair + the master)
 const SEATED_FITS: Fit[] = [
@@ -126,7 +147,7 @@ export class BarEngine {
     r: 13,
     dir: 1,
     bob: 0,
-    speed: 168, // a touch quicker — responsive without losing the stroll
+    speed: 240, // a digger's pace (hold Shift to sprint)
   };
   private npcs: Npc[] = [];
   // rave portal pull-through charge: 0 = idle, else ms elapsed (≤ PORTAL_CHARGE_MS).
@@ -140,9 +161,21 @@ export class BarEngine {
   // door fade/wipe transition: 0 idle; >0 = fading OUT to the next room; <0 = fading IN.
   // pendingRoom holds the destination while the screen is dark.
   private fade = 0;
-  private pendingRoom: { id: string; fromDoor: string } | null = null;
+  private pendingRoom: { id: string; fromDoor: string; spawn?: { x: number; y: number } } | null = null;
   private keys: Record<string, boolean> = {};
   private moveTarget: { x: number; y: number } | null = null;
+  // click-to-walk follows a path around fixtures (grid A*), and a click on a thing
+  // (crate, door, keeper, pile…) walks you there and uses it on arrival
+  private waypoints: { x: number; y: number }[] = [];
+  private pendingZone: Zone | null = null;
+  private stuck = { t: 0, x: 0, y: 0 };
+  private grid: Uint8Array | null = null;
+  private hover: PickRef | null = null;
+  // the game layer — all client-local (your own save; see lib/bar/progress.ts)
+  private dig: { idx: number; t: number } | null = null;
+  private pileRest: Record<string, number> = {};
+  private secretsFound = new Set<string>();
+  private talked = new Set<string>();
   private stickVec = { x: 0, y: 0 };
   private stickId: number | null = null;
   private activeZone: Zone | null = null;
@@ -161,6 +194,7 @@ export class BarEngine {
   private onKeyDown!: (e: KeyboardEvent) => void;
   private onKeyUp!: (e: KeyboardEvent) => void;
   private onCanvasPointer!: (e: PointerEvent) => void;
+  private onCanvasHover!: (e: PointerEvent) => void;
   private onStickDown!: (e: PointerEvent) => void;
   private onStickMove!: (e: PointerEvent) => void;
   private onStickUp!: () => void;
@@ -196,6 +230,7 @@ export class BarEngine {
     removeEventListener("keydown", this.onKeyDown);
     removeEventListener("keyup", this.onKeyUp);
     this.cv.removeEventListener("pointerdown", this.onCanvasPointer);
+    this.cv.removeEventListener("pointermove", this.onCanvasHover);
     this.stick.removeEventListener("pointerdown", this.onStickDown);
     this.stick.removeEventListener("pointermove", this.onStickMove);
     this.stick.removeEventListener("pointerup", this.onStickUp);
@@ -228,6 +263,30 @@ export class BarEngine {
   /** The room the local player is currently in (for filtering remote avatars). */
   currentRoom(): string {
     return this.room.id;
+  }
+
+  /** Fade-travel to a realm (the map's fast travel). Scenery only. */
+  travelTo(roomId: string): boolean {
+    if (!ROOMS[roomId] || roomId === this.room.id || this.transitioning()) return false;
+    this.pendingRoom = { id: roomId, fromDoor: "travel" };
+    this.fade = 0.0001;
+    return true;
+  }
+
+  /** Wander to a random realm (the lucky cat / the map's dice). */
+  wander(): string | null {
+    const ids = Object.keys(ROOMS).filter((r) => r !== this.room.id);
+    const id = ids[Math.floor(Math.random() * ids.length)];
+    return this.travelTo(id) ? id : null;
+  }
+
+  /** Which secret passages this player has found (from their local save). */
+  setSecretsFound(ids: string[]) {
+    this.secretsFound = new Set(ids);
+  }
+  /** Which keepers this player has talked to (the "!" goes quiet). */
+  setTalked(rooms: string[]) {
+    this.talked = new Set(rooms);
   }
 
   /** Instantly swap to another room (no door fade) — for deep-links / debugging.
@@ -288,6 +347,7 @@ export class BarEngine {
     this.shelves = shelves;
     for (let i = this.solids.length - 1; i >= 0; i--)
       if (this.solids[i]._shelf) this.solids.splice(i, 1);
+    this.grid = null;
     this.zones = this.zones.filter((z) => z.type !== "shelf");
     this.shelfObjs = [];
 
@@ -357,6 +417,7 @@ export class BarEngine {
   private solid(x: number, y: number, w: number, h: number): Rect {
     const r: Rect = { x, y, w, h };
     this.solids.push(r);
+    this.grid = null;
     return r;
   }
 
@@ -380,6 +441,8 @@ export class BarEngine {
     else if (this.room.scene === "archive") this.buildArchiveFixtures();
     else if (this.room.scene === "labyrinth") this.buildLabyrinthFixtures();
 
+    this.buildGameZones();
+
     // doors out of this room (the door primitive — reused from the rave portal,
     // pointed inward). The frame is solid; the prompt/charge zone sits IN FRONT.
     this.doors = this.room.doors;
@@ -392,6 +455,40 @@ export class BarEngine {
         d.facing === "up" ? d.y - off : d.facing === "down" ? d.y + d.h + off : d.y + d.h / 2;
       this.zones.push({ type: "door", cx: zx, cy: zy, r: 64, door: d });
     }
+  }
+
+  /** Dig piles, the keeper, secret hatches, the lucky cat (lib/bar/realms.ts).
+   *  Piles + hatches are flat (never solid); keepers + the cat are small solids. */
+  private buildGameZones() {
+    const realm = REALMS[this.room.id];
+    if (realm) {
+      realm.piles.forEach((p, idx) => this.zones.push({ type: "pile", cx: p.x, cy: p.y, r: 52, idx }));
+      const k = realm.keeper;
+      if (k.solid !== false && k.kind !== "cat") this.solid(k.x - 12, k.y - 12, 24, 24);
+      const z = k.zone ?? { x: k.x, y: k.y };
+      this.zones.push({ type: "keeper", cx: z.x, cy: z.y, r: 68 });
+    }
+    for (const { secret, here, there } of secretsIn(this.room.id)) {
+      this.zones.push({
+        type: "secret",
+        cx: here.x,
+        cy: here.y,
+        r: 46,
+        id: secret.id,
+        name: secret.name,
+        to: there.room,
+        // arrive just beside the far hatch (not on it — no bounce-back)
+        spawn: { x: there.x, y: there.y - 48 },
+      });
+    }
+    if (this.room.id === WANDER_CAT.room) {
+      this.solid(WANDER_CAT.x - 16, WANDER_CAT.y - 12, 32, 26);
+      this.zones.push({ type: "wander", cx: WANDER_CAT.zone.x, cy: WANDER_CAT.zone.y, r: 56 });
+    }
+  }
+
+  private pileReady(idx: number): boolean {
+    return performance.now() >= (this.pileRest[`${this.room.id}:${idx}`] ?? 0);
   }
 
   private buildKissaFixtures() {
@@ -592,12 +689,28 @@ export class BarEngine {
     addEventListener("keyup", this.onKeyUp);
 
     this.onCanvasPointer = (e) => {
-      if (this.cb.isOverlayOpen() || !this.started) return;
-      // click-to-walk: the view turns the screen point into a floor point
-      const p = this.view.screenToWorld(e.clientX, e.clientY);
-      if (p) this.moveTarget = p;
+      if (this.cb.isOverlayOpen() || !this.started || this.transitioning()) return;
+      // click a THING (crate, door, keeper, pile, hatch…) → walk there and use it;
+      // click the floor → walk there. Either way the route goes around fixtures.
+      const floor = this.view.screenToWorld(e.clientX, e.clientY);
+      const z = this.zoneForPick(this.view.pick(e.clientX, e.clientY), floor);
+      if (z) {
+        this.pendingZone = z;
+        this.walkTo({ x: z.cx, y: z.cy });
+        // already standing in it? use it right away
+        if (Math.hypot(this.player.x - z.cx, this.player.y - z.cy) < z.r * 0.85) this.arrive();
+        return;
+      }
+      this.pendingZone = null;
+      if (floor) this.walkTo(floor);
     };
     this.cv.addEventListener("pointerdown", this.onCanvasPointer);
+    this.onCanvasHover = (e) => {
+      if (e.pointerType !== "mouse") return;
+      this.hover = this.cb.isOverlayOpen() ? null : this.view.pick(e.clientX, e.clientY);
+      this.cv.style.cursor = this.hover ? "pointer" : "";
+    };
+    this.cv.addEventListener("pointermove", this.onCanvasHover);
 
     this.onStickDown = (e) => {
       this.stickId = e.pointerId;
@@ -636,6 +749,8 @@ export class BarEngine {
     this.nub.style.transform = `translate(${dx}px,${dy}px)`;
     this.stickVec = { x: dx / max, y: dy / max };
     this.moveTarget = null;
+    this.waypoints = [];
+    this.pendingZone = null;
   }
 
   private tryInteract() {
@@ -644,8 +759,11 @@ export class BarEngine {
       this.cb.onCloseOverlays();
       return;
     }
-    const z = this.activeZone;
-    if (!z) return;
+    if (this.activeZone) this.interactZone(this.activeZone);
+  }
+
+  private interactZone(z: Zone) {
+    if (this.dig || this.transitioning()) return;
     if (z.type === "shelf") {
       if (z.shelf.data.ingest) this.cb.onOpenIngest();
       else this.cb.onBrowseShelf(z.shelf.data);
@@ -663,14 +781,239 @@ export class BarEngine {
       // client-local). Audio/sync are untouched.
       if (z.url) this.cb.onOpenExternal(z.url);
     } else if (z.type === "door") {
-      // Walk through to the next venue room. Audio is one shared stream and does
-      // NOT change — this only swaps scenery. Start a fade-out; the swap happens
-      // at mid-fade (see updateTransition).
+      this.beginDoor(z.door.to);
+    } else if (z.type === "pile") {
+      // dig! the player crouches for DIG_TIME, then the host reveals a record
+      if (!this.pileReady(z.idx)) return;
+      this.dig = { idx: z.idx, t: 0 };
+      this.stopWalking();
+    } else if (z.type === "keeper") {
+      this.cb.onTalk?.(this.room.id);
+    } else if (z.type === "secret") {
+      const first = !this.secretsFound.has(z.id);
+      this.secretsFound.add(z.id);
+      this.cb.onSecret?.(z.id, first);
       if (this.fade === 0 && !this.pendingRoom) {
-        this.pendingRoom = { id: z.door.to, fromDoor: this.room.id };
-        this.fade = 0.0001; // begin fade-out
+        this.pendingRoom = { id: z.to, fromDoor: "secret", spawn: z.spawn };
+        this.fade = 0.0001;
+      }
+    } else if (z.type === "wander") {
+      this.wander();
+    }
+  }
+
+  /** Walk through a door: fade out, swap scenery at full dark, fade in. Audio is
+   *  one shared stream and does NOT change. */
+  private beginDoor(to: string) {
+    if (this.fade === 0 && !this.pendingRoom) {
+      this.pendingRoom = { id: to, fromDoor: this.room.id };
+      this.fade = 0.0001; // begin fade-out
+    }
+  }
+
+  private stopWalking() {
+    this.moveTarget = null;
+    this.waypoints = [];
+    this.pendingZone = null;
+  }
+
+  /** Reached the thing you clicked — use it (the portal still wants its E). */
+  private arrive() {
+    const z = this.pendingZone;
+    this.stopWalking();
+    if (!z || z.type === "portal") return;
+    this.interactZone(z);
+  }
+
+  /** What a click means: a picked 3D thing → its zone; else a floor point right
+   *  on top of an interactive spot. */
+  private zoneForPick(pick: PickRef | null, floor: { x: number; y: number } | null): Zone | null {
+    if (pick) {
+      const z = this.zones.find((z) => {
+        if (z.type !== pick.kind) return false;
+        if (z.type === "shelf") return z.shelf.data.id === pick.id;
+        if (z.type === "door") return z.door.to === pick.id;
+        if (z.type === "pile") return String(z.idx) === pick.id;
+        if (z.type === "secret") return z.id === pick.id;
+        return true;
+      });
+      if (z) return z;
+    }
+    if (!floor) return null;
+    let best: Zone | null = null;
+    let bd = 1e9;
+    for (const z of this.zones) {
+      if (z.type === "door" || z.type === "deck" || z.type === "bar" || z.type === "portal") continue;
+      const d = Math.hypot(floor.x - z.cx, floor.y - z.cy);
+      if (d < Math.min(z.r * 0.6, 40) && d < bd) {
+        bd = d;
+        best = z;
       }
     }
+    return best;
+  }
+
+  /** Route to a floor point around the fixtures. */
+  private walkTo(p: { x: number; y: number }) {
+    const to = { x: clamp(p.x, WALL + 14, ROOM.w - WALL - 14), y: clamp(p.y, WALL + 14, ROOM.h - WALL - 14) };
+    this.moveTarget = to;
+    this.waypoints = this.findPath(this.player, to);
+    this.stuck = { t: 0, x: this.player.x, y: this.player.y };
+  }
+
+  /* ----------------------------------------------------------- pathfinding */
+  private buildGrid() {
+    const g = new Uint8Array(GW * GH);
+    const probe = { x: 0, y: 0, r: this.player.r + 5 };
+    for (let j = 0; j < GH; j++)
+      for (let i = 0; i < GW; i++) {
+        probe.x = (i + 0.5) * CELL;
+        probe.y = (j + 0.5) * CELL;
+        for (const s of this.solids)
+          if (this.circRect(probe, s)) {
+            g[j * GW + i] = 1;
+            break;
+          }
+      }
+    this.grid = g;
+  }
+
+  /** true if the player could walk the straight segment a→b with `pad` px to spare */
+  private clearLine(a: { x: number; y: number }, b: { x: number; y: number }, pad = 1): boolean {
+    const d = Math.hypot(b.x - a.x, b.y - a.y);
+    const n = Math.max(1, Math.ceil(d / 6));
+    const probe = { x: 0, y: 0, r: this.player.r + pad };
+    for (let i = 1; i <= n; i++) {
+      probe.x = a.x + ((b.x - a.x) * i) / n;
+      probe.y = a.y + ((b.y - a.y) * i) / n;
+      for (const s of this.solids) if (this.circRect(probe, s)) return false;
+    }
+    return true;
+  }
+
+  /** Grid A* (8-way, no corner cutting) → string-pulled waypoints. Falls back to
+   *  a straight line when there's no route (you'll just bump into it). */
+  private findPath(from: { x: number; y: number }, to: { x: number; y: number }): { x: number; y: number }[] {
+    const PAD = 7; // routes keep this far off corners — the walker drifts off the ideal line
+    if (this.clearLine(from, to, PAD)) return [to];
+    if (!this.grid) this.buildGrid();
+    const g = this.grid!;
+    const cell = (p: { x: number; y: number }) =>
+      clamp(Math.floor(p.y / CELL), 0, GH - 1) * GW + clamp(Math.floor(p.x / CELL), 0, GW - 1);
+    const free = (c: number) => {
+      if (!g[c]) return c;
+      // nearest open cell (small BFS) — e.g. you clicked on top of a fixture
+      const seen = new Set([c]);
+      const q = [c];
+      while (q.length) {
+        const k = q.shift()!;
+        if (!g[k]) return k;
+        const x = k % GW;
+        const y = (k / GW) | 0;
+        for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1]]) {
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue;
+          const n = ny * GW + nx;
+          if (!seen.has(n) && seen.size < 900) {
+            seen.add(n);
+            q.push(n);
+          }
+        }
+      }
+      return c;
+    };
+    const s0 = free(cell(from));
+    const t0 = free(cell(to));
+    const tx = t0 % GW;
+    const ty = (t0 / GW) | 0;
+    const h = (c: number) => {
+      const dx = Math.abs((c % GW) - tx);
+      const dy = Math.abs(((c / GW) | 0) - ty);
+      return Math.max(dx, dy) + 0.414 * Math.min(dx, dy);
+    };
+    const gs = new Float32Array(GW * GH).fill(Infinity);
+    const came = new Int32Array(GW * GH).fill(-1);
+    const closed = new Uint8Array(GW * GH);
+    // tiny binary heap of [f, cell]
+    const heap: [number, number][] = [];
+    const push = (f: number, c: number) => {
+      heap.push([f, c]);
+      let i = heap.length - 1;
+      while (i > 0) {
+        const p = (i - 1) >> 1;
+        if (heap[p][0] <= heap[i][0]) break;
+        [heap[p], heap[i]] = [heap[i], heap[p]];
+        i = p;
+      }
+    };
+    const pop = () => {
+      const top = heap[0];
+      const last = heap.pop()!;
+      if (heap.length) {
+        heap[0] = last;
+        let i = 0;
+        for (;;) {
+          const l = i * 2 + 1;
+          const r = l + 1;
+          let m = i;
+          if (l < heap.length && heap[l][0] < heap[m][0]) m = l;
+          if (r < heap.length && heap[r][0] < heap[m][0]) m = r;
+          if (m === i) break;
+          [heap[m], heap[i]] = [heap[i], heap[m]];
+          i = m;
+        }
+      }
+      return top;
+    };
+    gs[s0] = 0;
+    push(h(s0), s0);
+    let found = false;
+    while (heap.length) {
+      const [, c] = pop();
+      if (closed[c]) continue;
+      closed[c] = 1;
+      if (c === t0) {
+        found = true;
+        break;
+      }
+      const x = c % GW;
+      const y = (c / GW) | 0;
+      for (let dy = -1; dy <= 1; dy++)
+        for (let dx = -1; dx <= 1; dx++) {
+          if (!dx && !dy) continue;
+          const nx = x + dx;
+          const ny = y + dy;
+          if (nx < 0 || ny < 0 || nx >= GW || ny >= GH) continue;
+          const n = ny * GW + nx;
+          if (g[n] || closed[n]) continue;
+          if (dx && dy && (g[y * GW + nx] || g[ny * GW + x])) continue; // no corner cutting
+          const ng = gs[c] + (dx && dy ? 1.414 : 1);
+          if (ng < gs[n]) {
+            gs[n] = ng;
+            came[n] = c;
+            push(ng + h(n), n);
+          }
+        }
+    }
+    if (!found) return [to];
+    const cells: { x: number; y: number }[] = [];
+    for (let c = t0; c !== -1 && c !== s0; c = came[c])
+      cells.push({ x: ((c % GW) + 0.5) * CELL, y: (((c / GW) | 0) + 0.5) * CELL });
+    cells.reverse();
+    if (!g[cell(to)] && (!cells.length || this.clearLine(cells[cells.length - 1], to, PAD))) cells.push(to);
+    // string-pull: keep only the corners you can't see past
+    const out: { x: number; y: number }[] = [];
+    let at: { x: number; y: number } = from;
+    let i = 0;
+    while (i < cells.length) {
+      let j = cells.length - 1;
+      while (j > i && !this.clearLine(at, cells[j], PAD)) j--;
+      out.push(cells[j]);
+      at = cells[j];
+      i = j + 1;
+    }
+    return out.length ? out : [to];
   }
 
   /* ----------------------------------------------------------- loop */
@@ -688,13 +1031,22 @@ export class BarEngine {
       this.updatePrompt();
       return;
     }
-    // while typing in chat OR mid-room-transition, freeze the avatar (keep the
-    // world alive). Transition freeze stops drifting through the new room's walls.
-    if (this.cb.isTyping() || this.transitioning()) {
+    // while typing in chat, mid-room-transition, or mid-dig, freeze the avatar
+    // (keep the world alive). Transition freeze stops drifting through new walls.
+    if (this.cb.isTyping() || this.transitioning() || this.dig) {
       this.keys = {};
-      this.moveTarget = null;
+      this.stopWalking();
       this.stickVec = { x: 0, y: 0 };
       this.playerMoving = false;
+    }
+    if (this.dig) {
+      this.dig.t += dt;
+      if (this.dig.t >= DIG_TIME) {
+        const idx = this.dig.idx;
+        this.dig = null;
+        this.pileRest[`${this.room.id}:${idx}`] = performance.now() + PILE_REST_MS;
+        this.cb.onDig?.(this.room.id, idx);
+      }
     }
     let ix = 0;
     let iy = 0;
@@ -708,15 +1060,24 @@ export class BarEngine {
       iy = this.stickVec.y;
     }
     const kbMoving = ix || iy;
-    if (kbMoving) this.moveTarget = null;
+    if (kbMoving) this.stopWalking();
     if (this.moveTarget) {
-      const dx = this.moveTarget.x - this.player.x;
-      const dy = this.moveTarget.y - this.player.y;
+      // steer at the next waypoint; the last one is the target itself
+      let wp = this.waypoints[0] ?? this.moveTarget;
+      if (this.waypoints.length > 1 && Math.hypot(wp.x - this.player.x, wp.y - this.player.y) < 10) {
+        this.waypoints.shift();
+        wp = this.waypoints[0];
+      }
+      const dx = wp.x - this.player.x;
+      const dy = wp.y - this.player.y;
       const d = Math.hypot(dx, dy);
       if (d > 6) {
         ix = dx / d;
         iy = dy / d;
-      } else this.moveTarget = null;
+      } else {
+        this.moveTarget = null;
+        this.waypoints = [];
+      }
     }
     const m = Math.hypot(ix, iy) || 1;
     ix /= m;
@@ -724,16 +1085,47 @@ export class BarEngine {
     const moving =
       kbMoving || this.moveTarget || this.stickVec.x || this.stickVec.y;
     this.playerMoving = !!moving;
+    // Shift sprints; a clicked route strides a little quicker than a stroll
+    const sprint = k["shift"] ? 1.5 : this.moveTarget ? 1.3 : 1;
     const spd =
-      (Math.hypot(this.stickVec.x, this.stickVec.y) || 1) * this.player.speed;
+      (Math.hypot(this.stickVec.x, this.stickVec.y) || 1) * this.player.speed * sprint;
     this.moveEntity(this.player, ix * spd * dt, iy * spd * dt);
     if (ix) this.player.dir = ix > 0 ? 1 : -1;
     this.player.bob = moving ? this.player.bob + dt * 11 : 0;
+
+    // clicked a thing: use it once you're standing in its zone
+    const pz = this.pendingZone;
+    if (pz && Math.hypot(this.player.x - pz.cx, this.player.y - pz.cy) < pz.r * 0.85) this.arrive();
+    // a route that stopped making progress (blocked by a moving body) gives up
+    if (this.moveTarget) {
+      this.stuck.t += dt;
+      if (this.stuck.t > 0.7) {
+        if (Math.hypot(this.player.x - this.stuck.x, this.player.y - this.stuck.y) < 8) this.stopWalking();
+        this.stuck = { t: 0, x: this.player.x, y: this.player.y };
+      }
+    }
+    // walk INTO a doorway and you're through — no key needed
+    if (moving) this.walkThroughDoors(ix, iy);
 
     this.npcs.forEach((n) => this.updateNpc(n, dt));
     this.updatePrompt();
     this.updatePortalCharge(dt);
     this.updateTransition(dt);
+  }
+
+  /** Pressed against a door frame while heading into it → step through. */
+  private walkThroughDoors(ix: number, iy: number) {
+    if (this.transitioning()) return;
+    const probe = { x: this.player.x, y: this.player.y, r: this.player.r + 6 };
+    for (const d of this.doors) {
+      if (!this.circRect(probe, d)) continue;
+      const [fx, fy] =
+        d.facing === "left" ? [1, 0] : d.facing === "right" ? [-1, 0] : d.facing === "up" ? [0, 1] : [0, -1];
+      if (ix * fx + iy * fy > 0.35) {
+        this.beginDoor(d.to);
+        return;
+      }
+    }
   }
 
   /**
@@ -743,12 +1135,12 @@ export class BarEngine {
    * screen is dark so you don't drift through the new room's walls.
    */
   private updateTransition(dt: number) {
-    const RATE = 1 / 0.32; // ~320ms each way
+    const RATE = 1 / 0.24; // ~240ms each way — quick, so moving between realms flows
     if (this.pendingRoom && this.fade > 0) {
       this.fade += dt * RATE;
       if (this.fade >= 1) {
         // mid-transition: actually enter the new room while fully dark
-        this.enterRoom(this.pendingRoom.id, this.pendingRoom.fromDoor);
+        this.enterRoom(this.pendingRoom.id, this.pendingRoom.fromDoor, this.pendingRoom.spawn);
         this.pendingRoom = null;
         this.fade = -1; // now fade back IN
       }
@@ -765,7 +1157,7 @@ export class BarEngine {
 
   /** Swap to a room: reset solids/zones, rebuild fixtures + shelves, spawn the
    *  player at the incoming door, retarget NPCs. SCENERY ONLY. */
-  private enterRoom(roomId: string, fromRoom: string) {
+  private enterRoom(roomId: string, fromRoom: string, spawn?: { x: number; y: number }) {
     const next = ROOMS[roomId];
     if (!next) return;
     this.room = next;
@@ -776,14 +1168,31 @@ export class BarEngine {
     this.view.setRoom(next);
     this.setShelves(this.shelves);
     this.npcs = this.roomNpcs(next.id);
-    const sp = next.spawns[fromRoom] ?? next.defaultSpawn;
+    const sp = this.freeSpot(spawn ?? next.spawns[fromRoom] ?? next.defaultSpawn);
     this.player.x = sp.x;
     this.player.y = sp.y;
-    this.moveTarget = null;
+    this.stopWalking();
+    this.dig = null;
     this.activeZone = null;
     this.lastPrompt = null;
     this.cb.onPrompt(null);
     this.cb.onRoomChange(next.id);
+  }
+
+  /** The nearest spot to `p` where the player fits (arrivals must never land
+   *  inside a fixture — the collision resolver would freeze you there). */
+  private freeSpot(p: { x: number; y: number }): { x: number; y: number } {
+    const fits = (x: number, y: number) =>
+      !this.solids.some((s) => this.circRect({ x, y, r: this.player.r + 2 }, s));
+    if (fits(p.x, p.y)) return p;
+    for (let r = 12; r <= 160; r += 12)
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        const x = p.x + Math.cos(a) * r;
+        const y = p.y + Math.sin(a) * r;
+        if (fits(x, y)) return { x, y };
+      }
+    return p;
   }
 
   /** Per-room ambient NPC paths (presence-driven listeners render separately). */
@@ -949,6 +1358,19 @@ export class BarEngine {
         const l = best.door.label;
         s = /^(back|down|up|to)\b/.test(l) ? `Head <b>${l}</b>` : `Step through to <b>${l}</b>`;
       }
+      if (best.type === "pile") {
+        const left = Math.ceil(((this.pileRest[`${this.room.id}:${best.idx}`] ?? 0) - performance.now()) / 1000);
+        s = this.dig ? `Digging…` : left > 0 ? `Dug out — more turns up in <b>${left}s</b>` : `Dig through the pile <b>✦</b>`;
+      }
+      if (best.type === "keeper") {
+        const k = REALMS[this.room.id]?.keeper;
+        s = k ? `Talk to <b>${k.name}</b> · ${k.title}` : "";
+      }
+      if (best.type === "secret")
+        s = this.secretsFound.has(best.id)
+          ? `Take <b>${best.name}</b> to ${REALMS[best.to]?.name ?? best.to}`
+          : `Something hums under the floor… <b>look closer</b>`;
+      if (best.type === "wander") s = `Rub the lucky cat — <b>wander somewhere random</b>`;
       html = s + ` <span class="key">E</span>`;
     }
     if (html !== this.lastPrompt) {
@@ -963,7 +1385,7 @@ export class BarEngine {
   private render(dt: number) {
     const moving = this.playerMoving;
     const actors: Actor[] = [
-      { id: "player", x: this.player.x, y: this.player.y, fit: this.playerFit, moving, player: true },
+      { id: "player", x: this.player.x, y: this.player.y, fit: this.playerFit, moving, player: true, digging: !!this.dig },
       ...this.npcs.map((n, i) => ({
         id: `npc:${this.room.id}:${i}`,
         x: n.x,
@@ -973,6 +1395,22 @@ export class BarEngine {
       })),
       ...this.remoteActors(), // other live listeners IN THIS ROOM (the lobby)
     ];
+    // the realm's keeper (the cosmic cat keeper is part of the curator scenery)
+    const keeper = REALMS[this.room.id]?.keeper;
+    if (keeper && keeper.kind !== "cat") {
+      const dx = this.player.x - keeper.x;
+      const dy = this.player.y - keeper.y;
+      actors.push({
+        id: `keeper:${this.room.id}`,
+        x: keeper.x,
+        y: keeper.y,
+        fit: keeper.fit,
+        moving: false,
+        // turns to greet you when you come close
+        yaw: Math.hypot(dx, dy) < 190 ? Math.atan2(dx, dy) : 0,
+        pick: { kind: "keeper" },
+      });
+    }
     // kissa-only ambient: the master behind the bar + the seated pair on the tatami
     if (this.room.scene === "kissa") {
       actors.push({ id: "master", x: KISSA_MASTER.x, y: KISSA_MASTER.y, fit: MASTER_FIT, moving: false, yaw: -Math.PI / 2 });
@@ -992,7 +1430,15 @@ export class BarEngine {
       fade: Math.abs(this.fade),
       phaseMult: this.phaseMult,
       phaseGlow: this.phaseGlow,
-      speed: Math.hypot(this.stickVec.x, this.stickVec.y) || 1,
+      speed: (Math.hypot(this.stickVec.x, this.stickVec.y) || 1) * (this.keys["shift"] ? 1.5 : 1),
+      game: {
+        realm: this.room.id,
+        piles: (REALMS[this.room.id]?.piles ?? []).map((_, i) => ({ ready: this.pileReady(i) })),
+        dig: this.dig ? { idx: this.dig.idx, t: this.dig.t / DIG_TIME } : null,
+        secretsFound: [...this.secretsFound],
+        talked: this.talked.has(this.room.id),
+        hover: this.hover,
+      },
     });
   }
 
@@ -1002,6 +1448,8 @@ export class BarEngine {
     if (!z) return null;
     if (z.type === "shelf") return { type: "shelf", id: z.shelf.data.id };
     if (z.type === "door") return { type: "door", to: z.door.to };
+    if (z.type === "pile") return { type: "pile", idx: z.idx };
+    if (z.type === "secret") return { type: "secret", id: z.id };
     return { type: z.type };
   }
 
