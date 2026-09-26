@@ -1,15 +1,25 @@
-// FITS — your look in the bar. A Fit is four choices (skin, outfit, hair, hat).
-// It's persisted locally and broadcast over presence so everyone sees the same
-// you. Pure data + tiny helpers; the canvas draws it (engine.person), React
-// previews it (the fit panel), and presence carries it on the wire.
+// FITS — your look in the bar. A Fit is your body (skin, hair), your outfit
+// colour, and your GEAR: a hat plus a top / neck / eyes / back piece. You start
+// in basic clothes; gear is gifted as you dig, keep records and meet the keepers
+// (lib/bar/gifts.ts). It's persisted locally and broadcast over presence so
+// everyone sees the same you. The 3D character draws it (three/character.ts).
 
-export type Hat = "none" | "cap" | "beanie" | "flower" | "halo" | "phones";
+export type Hat = "none" | "cap" | "beanie" | "flower" | "halo" | "phones" | "bucket";
+export type Top = "basic" | "sombra-tee" | "haori" | "hoodie";
+export type Neck = "none" | "chain" | "usb" | "mala" | "record";
+export type Eyes = "none" | "shades" | "specs";
+export type Back = "none" | "crate" | "tote" | "gong";
 
 export interface Fit {
   skin: string;
   body: string; // the outfit colour — also your cue-dot / chat identity
   hair: string;
   hat: Hat;
+  /** gear slots (absent = the basic default) */
+  top?: Top;
+  neck?: Neck;
+  eyes?: Eyes;
+  back?: Back;
 }
 
 // Curated swatches. Outfits double as the anonymous identity colour, so they're
@@ -24,7 +34,11 @@ export const HAIRS = [
   "#2a1c12", "#1b1b22", "#15151a", "#241812",
   "#5a3a22", "#8a6a3a", "#b0593a", "#9a9aa2",
 ];
-export const HATS: Hat[] = ["none", "cap", "beanie", "flower", "halo", "phones"];
+export const HATS: Hat[] = ["none", "cap", "beanie", "flower", "halo", "phones", "bucket"];
+export const TOPS: Top[] = ["basic", "sombra-tee", "haori", "hoodie"];
+export const NECKS: Neck[] = ["none", "chain", "usb", "mala", "record"];
+export const EYES: Eyes[] = ["none", "shades", "specs"];
+export const BACKS: Back[] = ["none", "crate", "tote", "gong"];
 
 const HAT_LABEL: Record<Hat, string> = {
   none: "—",
@@ -33,7 +47,23 @@ const HAT_LABEL: Record<Hat, string> = {
   flower: "flower",
   halo: "halo",
   phones: "phones",
+  bucket: "bucket hat",
 };
+
+/** The gear on the wire: "top.neck.eyes.back" (presence meta). */
+export function gearCode(f: Fit): string {
+  return [f.top ?? "basic", f.neck ?? "none", f.eyes ?? "none", f.back ?? "none"].join(".");
+}
+/** Parse a gear code from another listener — unknown pieces fall back to basic. */
+export function parseGear(code: string | undefined): Pick<Fit, "top" | "neck" | "eyes" | "back"> {
+  const [t, n, e, b] = (code ?? "").split(".");
+  return {
+    top: TOPS.includes(t as Top) ? (t as Top) : "basic",
+    neck: NECKS.includes(n as Neck) ? (n as Neck) : "none",
+    eyes: EYES.includes(e as Eyes) ? (e as Eyes) : "none",
+    back: BACKS.includes(b as Back) ? (b as Back) : "none",
+  };
+}
 export function hatLabel(h: Hat): string {
   return HAT_LABEL[h] ?? h;
 }
@@ -52,9 +82,10 @@ export function defaultFit(id: string): Fit {
   };
 }
 
+/** A fresh arrival: random body + outfit colour, basic clothes, no gear. */
 export function randomFit(): Fit {
   const pick = <T>(a: T[]) => a[Math.floor(Math.random() * a.length)];
-  return { skin: pick(SKINS), body: pick(OUTFITS), hair: pick(HAIRS), hat: pick(HATS) };
+  return { skin: pick(SKINS), body: pick(OUTFITS), hair: pick(HAIRS), hat: "none" };
 }
 
 function valid(f: unknown): f is Fit {
@@ -64,7 +95,11 @@ function valid(f: unknown): f is Fit {
     typeof o.skin === "string" &&
     typeof o.body === "string" &&
     typeof o.hair === "string" &&
-    HATS.includes(o.hat)
+    HATS.includes(o.hat) &&
+    (o.top === undefined || TOPS.includes(o.top)) &&
+    (o.neck === undefined || NECKS.includes(o.neck)) &&
+    (o.eyes === undefined || EYES.includes(o.eyes)) &&
+    (o.back === undefined || BACKS.includes(o.back))
   );
 }
 

@@ -23,10 +23,20 @@ import {
   SKINS,
   OUTFITS,
   HAIRS,
-  HATS,
-  hatLabel,
   type Fit,
 } from "@/lib/bar/fits";
+import {
+  GIFTS,
+  KEEPER_GIFT,
+  rollGift,
+  ownedGear,
+  wearGift,
+  grandfatherFit,
+  clampFit,
+  type Gift,
+  type GiftSlot,
+  type GiftTrigger,
+} from "@/lib/bar/gifts";
 import type { Shelf, Track } from "@/lib/bar/types";
 import { REALMS, REALM_ORDER, SECRETS } from "@/lib/bar/realms";
 import {
@@ -43,7 +53,8 @@ import {
 import { AvatarPreview, TierChip, useProgress, type FlowUi } from "@/components/game/shared";
 import { DigReveal, type Reveal } from "@/components/game/DigReveal";
 import { Dialogue } from "@/components/game/Dialogue";
-import { Dex } from "@/components/game/Dex";
+import { Dex, STASH } from "@/components/game/Dex";
+import { GiftCard, type GiftItem } from "@/components/game/GiftCard";
 import { WorldMap } from "@/components/game/WorldMap";
 import { ArrivalBanner, Toasts, type Banner, type Toast } from "@/components/game/Hud";
 
@@ -229,12 +240,29 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
   const dialogueOpenRef = useRef(false);
   dialogueOpenRef.current = dialogue !== null;
   const escRef = useRef(false); // the Esc key closes a dialogue instead of paging it
+  // gifts waiting to be handed over — shown one at a time, only once nothing
+  // else modal is open (a dig reveal, a keeper mid-sentence, a crate…)
+  const [giftQueue, setGiftQueue] = useState<GiftItem[]>([]);
+  const [dexTab, setDexTab] = useState<string | undefined>(undefined);
+  const [unseenGifts, setUnseenGifts] = useState(0);
 
   // ----- refs read every frame by the engine (avoid per-frame re-render) -----
   const playingRef = useRef(false);
   const overlayOpenRef = useRef(false);
+  const giftBlocked =
+    !started || crate !== null || ingestOpen || reveal !== null || dialogue !== null || dexOpen || mapOpen || fitOpen;
+  const giftShowing = !giftBlocked && giftQueue.length > 0 ? giftQueue[0] : null;
+  const giftShowingRef = useRef(false);
+  giftShowingRef.current = giftShowing !== null;
+  // when the current gift card appeared — a mashed E (paging a keeper) must not
+  // dismiss the gift before anyone sees it
+  const giftShownAtRef = useRef(0);
+  const giftKey = giftShowing?.key ?? 0;
+  useEffect(() => {
+    if (giftKey) giftShownAtRef.current = performance.now();
+  }, [giftKey]);
   overlayOpenRef.current =
-    crate !== null || ingestOpen || reveal !== null || dialogue !== null || dexOpen || mapOpen;
+    crate !== null || ingestOpen || reveal !== null || dialogue !== null || dexOpen || mapOpen || giftShowing !== null;
   const typingRef = useRef(false);
 
   // ----- dom + instance refs -----
@@ -329,6 +357,12 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
             dialogueAdvanceRef.current?.();
             return;
           }
+          // a gift on screen is the top layer — E / Esc just takes it
+          if (giftShowingRef.current) {
+            if (escRef.current || performance.now() - giftShownAtRef.current > 900)
+              setGiftQueue((q) => q.slice(1));
+            return;
+          }
           setCrate(null);
           setIngestOpen(false);
           setReveal(null);
@@ -372,7 +406,12 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
     // resolve the saved look now (client-only — localStorage), or roll a fresh
     // one. Seed the engine + the panel state, and hand it to presence so the
     // first broadcast already carries the right fit.
-    const initialFit = loadFit() ?? randomFit();
+    // Brand-new listeners arrive in basic clothes; players from before gifts keep
+    // whatever they were wearing (it becomes theirs), and the fit never shows
+    // gear you don't own.
+    const loaded = loadFit() ?? randomFit();
+    grandfatherFit(loaded);
+    const initialFit = clampFit(loaded);
     setFit(initialFit);
     engine.setPlayerFit(initialFit);
 
@@ -599,12 +638,37 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
     (t: Track, shelf: Shelf) => {
       const before = Object.keys(getProgress().dug).length;
       const res = markDug(t, shelf, shelf.room ?? "kissa", shelvesRef.current);
-      if (res.badge) toast(`🏅 Realm badge — ${REALMS[res.badge]?.name ?? res.badge}`, "gold", 5200);
+      if (res.badge) {
+        toast(`🏅 Realm badge — ${REALMS[res.badge]?.name ?? res.badge}`, "gold", 5200);
+        giftRef.current({ kind: "badge" }, REALMS[res.badge]?.keeper.name ?? "the bar");
+      }
       if (res.isNew) titleCheck(before);
       return res;
     },
     [toast, titleCheck]
   );
+  /** something happened — maybe the bar hands over a gift (queued for display) */
+  const giftRef = useRef<(t: GiftTrigger, from?: string) => Gift | null>(() => null);
+  giftRef.current = (t, from = "the bar") => {
+    const g = rollGift(t);
+    if (!g) return null;
+    setGiftQueue((q) => [...q, { key: Date.now() + Math.random(), gift: g, from }]);
+    setUnseenGifts((n) => n + 1);
+    // behind a crate / the paste box: let them know it's waiting
+    if (crate || ingestOpen) toast(`🎁 A gift is waiting — ${g.icon} close to open it`, "gold", 4200);
+    return g;
+  };
+  const takeGift = useCallback(() => setGiftQueue((q) => q.slice(1)), []);
+  const wearNow = useCallback(
+    (g: Gift) => {
+      const f = fitRef.current;
+      if (f) applyFit(wearGift(f, g));
+      setGiftQueue((q) => q.slice(1));
+      toast(`${g.icon} Wearing the ${g.name}`, "green", 2600);
+    },
+    [applyFit, toast]
+  );
+
   const gameRef = useRef<GameHandlers>({
     onArrive: noop,
     onDig: noop,
@@ -618,7 +682,10 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
       const { first } = markVisited(r);
       const stamped = REALM_ORDER.filter((id) => getProgress().visited[id]).length;
       setBanner({ key: Date.now(), room: r, first, stamped });
-      if (first && r !== "kissa") toast(`✦ New realm stamped — ${stamped}/${REALM_ORDER.length}`, "green");
+      if (first && r !== "kissa") {
+        toast(`✦ New realm stamped — ${stamped}/${REALM_ORDER.length}`, "green");
+        giftRef.current({ kind: "visit" }, REALMS[r]?.name ?? "the bar");
+      }
     },
     onDig: (r) => {
       setToasts((t) => t.filter((x) => x.tone !== "hint")); // they found the piles — hint done
@@ -630,14 +697,21 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
       const before = Object.keys(getProgress().dug).length;
       const res = markDug(pick.track, pick.shelf, r, shelvesRef.current);
       setReveal({ kind: "record", room: r, track: pick.track, shelf: pick.shelf, entry: res.entry, isNew: res.isNew });
-      if (res.badge) toast(`🏅 Realm badge — ${REALMS[res.badge]?.name ?? res.badge}`, "gold", 5200);
+      if (res.badge) {
+        toast(`🏅 Realm badge — ${REALMS[res.badge]?.name ?? res.badge}`, "gold", 5200);
+        giftRef.current({ kind: "badge" }, REALMS[res.badge]?.keeper.name ?? "the bar");
+      }
       if (res.isNew) titleCheck(before);
+      // the pile sometimes has something else in it (shown after the record)
+      giftRef.current({ kind: "dig" }, "the pile");
     },
     onTalk: (r) => {
       if (!REALMS[r]) return;
       setToasts((t) => t.filter((x) => x.tone !== "hint")); // they found Rio — hint done
       setDialogue(r);
       markTalked(r);
+      // the keeper's gift (first talk only) — handed over when the talk ends
+      giftRef.current({ kind: "talk", room: r }, REALMS[r].keeper.name);
       engineRef.current?.setTalked(Object.keys(getProgress().talked));
     },
     onSecret: (id, first) => {
@@ -645,6 +719,7 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
         markSecret(id);
         const sec = SECRETS.find((x) => x.id === id);
         toast(`✦ Secret passage found — ${sec?.name ?? id}`, "gold", 5200);
+        giftRef.current({ kind: "secret" }, sec?.name ?? "a secret passage");
       }
       engineRef.current?.setSecretsFound(Object.keys(getProgress().secrets));
     },
@@ -738,11 +813,13 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
       const p = presenceRef.current;
       if (!crate || !p) return;
       const recs = whole ? crate.shelf.records : [crate.shelf.records[start]];
+      let fresh = false;
       for (const r of recs) {
         if (!p.canCue()) break;
         p.cue(r);
-        keep(r, crate.shelf); // cueing a record keeps it in your dex
+        if (keep(r, crate.shelf).isNew) fresh = true; // cueing a record keeps it in your dex
       }
+      if (fresh) giftRef.current({ kind: "keep" });
       refreshFlowUi();
       setCrate(null);
     },
@@ -795,6 +872,7 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
         >
           {menuOpen ? "✕" : "☰"}
           {!menuOpen && unseenAdds > 0 && <span className="badge">{unseenAdds}</span>}
+          {!menuOpen && unseenGifts > 0 && <span className="giftDotMenu">🎁</span>}
         </button>
         {started && <VenueClock engineRef={engineRef} />}
         {started && roster > 0 && (
@@ -836,6 +914,11 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           >
             💿 {Object.keys(progress.dug).length}
             <span className="dexPillTitle">{titleFor(Object.keys(progress.dug).length)}</span>
+            {unseenGifts > 0 && (
+              <span className="giftDot" title="new gifts in your stash">
+                🎁{unseenGifts}
+              </span>
+            )}
           </button>
         )}
         {started && (
@@ -928,7 +1011,9 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           onFlip={flip}
           onPlay={() => cueFromCrate(crate.idx, false)}
           onPlayShelf={() => cueFromCrate(0, true)}
-          onKeep={(t) => keep(t, crate.shelf)}
+          onKeep={(t) => {
+            if (keep(t, crate.shelf).isNew) giftRef.current({ kind: "keep" });
+          }}
         />
       )}
 
@@ -954,6 +1039,28 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
             setMapOpen(true);
           }}
           onWander={wander}
+          gift={(() => {
+            const held = giftQueue.find((q) => q.gift.id === KEEPER_GIFT[dialogue]);
+            return held ? held.gift : null;
+          })()}
+        />
+      )}
+      {giftShowing && (
+        <GiftCard
+          item={giftShowing}
+          owned={GIFTS.filter((g) => progress.gifts?.[g.id]).length}
+          wearing={!!fit && giftShowing.gift.kind === "wear" && !!giftShowing.gift.slot && fit[giftShowing.gift.slot] === giftShowing.gift.value}
+          onWear={() => wearNow(giftShowing.gift)}
+          onStash={() => {
+            takeGift();
+            setDexTab(STASH);
+            setUnseenGifts(0);
+            setDexOpen(true);
+          }}
+          onClose={takeGift}
+          onBackdrop={() => {
+            if (performance.now() - giftShownAtRef.current > 900) takeGift();
+          }}
         />
       )}
       {dexOpen && (
@@ -964,11 +1071,17 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           flow={flowUi}
           solo={soloMode}
           onCue={cueTrack}
-          onClose={() => setDexOpen(false)}
+          onClose={() => {
+            setDexOpen(false);
+            setDexTab(undefined);
+          }}
           onMap={() => {
             setDexOpen(false);
+            setDexTab(undefined);
             setMapOpen(true);
           }}
+          startTab={dexTab}
+          onSeeStash={() => setUnseenGifts(0)}
         />
       )}
       {mapOpen && (
@@ -992,6 +1105,7 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
         myColor={myColor}
         onClose={() => setIngestOpen(false)}
         onShelvesChange={setShelves}
+        onIngested={() => giftRef.current({ kind: "ingest" }, "the bar — thanks for the records")}
       />
 
       {addedOpen && (
@@ -1409,12 +1523,15 @@ function Ingest({
   myColor,
   onClose,
   onShelvesChange,
+  onIngested,
 }: {
   open: boolean;
   shelves: Shelf[];
   myColor?: string;
   onClose: () => void;
   onShelvesChange: (s: Shelf[]) => void;
+  /** records were added (the bar thanks you with a gift) */
+  onIngested?: (count: number) => void;
 }) {
   // default the file-into picker to the live ingest crate, like the prototype
   const ingestShelfId =
@@ -1478,6 +1595,7 @@ function Ingest({
         next.splice(ingestIdx < 0 ? next.length : ingestIdx, 0, created);
       }
       onShelvesChange(next);
+      onIngested?.(records.length);
       setLog({
         ok: true,
         msg: `＋ filed ${records.length} record${
@@ -1731,29 +1849,92 @@ function FitPanel({
             ))}
           </div>
         </div>
-        <div className="fitRow">
-          <span className="fitLabel">hat</span>
-          <div className="hatRow">
-            {HATS.map((h) => (
-              <button
-                key={h}
-                className={"hatChip" + (fit.hat === h ? " on" : "")}
-                onClick={() => onChange({ ...fit, hat: h })}
-              >
-                {hatLabel(h)}
-              </button>
-            ))}
-          </div>
-        </div>
+        <GearRow slot="hat" label="hat" fit={fit} onChange={onChange} />
+        <GearRow slot="top" label="top" fit={fit} onChange={onChange} />
+        <GearRow slot="neck" label="neck" fit={fit} onChange={onChange} />
+        <GearRow slot="eyes" label="eyes" fit={fit} onChange={onChange} />
+        <GearRow slot="back" label="back" fit={fit} onChange={onChange} />
 
         <div className="fitActions">
-          <button className="btn ghost" onClick={() => onChange(randomFit())}>
+          <button className="btn ghost" onClick={() => onChange(randomOwnedFit())}>
             🎲 randomize
           </button>
           <button className="btn" onClick={onClose}>
             done
           </button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+/** A random look from the free swatches + only the gear you've been gifted. */
+function randomOwnedFit(): Fit {
+  const pick = <T,>(a: T[]) => a[Math.floor(Math.random() * a.length)];
+  const o = ownedGear();
+  return {
+    skin: pick(SKINS),
+    body: pick(OUTFITS),
+    hair: pick(HAIRS),
+    hat: pick(o.hat),
+    top: pick(o.top),
+    neck: pick(o.neck),
+    eyes: pick(o.eyes),
+    back: pick(o.back),
+  };
+}
+
+const GEAR_BASE: Record<GiftSlot, { value: string; label: string }> = {
+  hat: { value: "none", label: "—" },
+  top: { value: "basic", label: "basic tee" },
+  neck: { value: "none", label: "—" },
+  eyes: { value: "none", label: "—" },
+  back: { value: "none", label: "—" },
+};
+
+/** One gear slot in the fit panel: the basic default + what you've been gifted,
+ *  and how many pieces for this slot are still out there. */
+function GearRow({
+  slot,
+  label,
+  fit,
+  onChange,
+}: {
+  slot: GiftSlot;
+  label: string;
+  fit: Fit;
+  onChange: (f: Fit) => void;
+}) {
+  useProgress(); // re-render when a new piece is gifted
+  const base = GEAR_BASE[slot];
+  const all = GIFTS.filter((g) => g.slot === slot);
+  const owned = new Set<string>(ownedGear()[slot] as string[]);
+  const mine = all.filter((g) => owned.has(g.value as string));
+  const locked = all.length - mine.length;
+  const current = (fit[slot] as string | undefined) ?? base.value;
+  const set = (v: string) => onChange({ ...fit, [slot]: v } as Fit);
+  return (
+    <div className="fitRow">
+      <span className="fitLabel">{label}</span>
+      <div className="hatRow">
+        <button className={"hatChip" + (current === base.value ? " on" : "")} onClick={() => set(base.value)}>
+          {base.label}
+        </button>
+        {mine.map((g) => (
+          <button
+            key={g.id}
+            className={"hatChip" + (current === g.value ? " on" : "")}
+            onClick={() => set(g.value as string)}
+            title={g.blurb}
+          >
+            {g.icon} {g.name}
+          </button>
+        ))}
+        {locked > 0 && (
+          <span className="gearLocked" title="keep digging, keep talking — the bar gifts gear as you play">
+            🎁 ×{locked} more to find
+          </span>
+        )}
       </div>
     </div>
   );

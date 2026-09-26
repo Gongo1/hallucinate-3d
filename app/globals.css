@@ -2887,3 +2887,404 @@ select,
     margin: 18px auto 10px;
   }
 }
+
+/* ======================================================================
+   GIFTS — you arrive in basic clothes; the bar hands you gear + keepsakes.
+   ====================================================================== */
+.gGift {
+  z-index: 45;
+}
+.giftBox {
+  width: min(430px, 92vw);
+  text-align: center;
+  animation: rise 0.3s ease;
+}
+.giftFrom {
+  font-size: 12px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+.giftFrom b {
+  color: #ffd76a;
+  font-weight: 500;
+}
+.giftStage {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  margin: 18px auto 6px;
+  display: grid;
+  place-items: center;
+}
+.giftBurst {
+  position: absolute;
+  inset: -60px;
+  border-radius: 50%;
+  background: repeating-conic-gradient(from 0deg, rgba(255, 215, 106, 0.22) 0deg 8deg, transparent 8deg 24deg);
+  mask-image: radial-gradient(circle, #000 20%, transparent 66%);
+  -webkit-mask-image: radial-gradient(circle, #000 20%, transparent 66%);
+  animation: raySpin 18s linear infinite, rayIn 0.6s ease both;
+}
+.rarity-3 .giftBurst {
+  background: repeating-conic-gradient(from 0deg, rgba(255, 138, 214, 0.28) 0deg 8deg, rgba(138, 255, 214, 0.2) 8deg 16deg, transparent 16deg 24deg);
+}
+.giftStage::before {
+  content: "";
+  position: absolute;
+  width: 150px;
+  height: 150px;
+  border-radius: 34px;
+  background: radial-gradient(circle at 50% 40%, rgba(255, 215, 106, 0.26), rgba(40, 26, 12, 0.92) 70%);
+  border: 1px solid rgba(255, 215, 106, 0.45);
+  box-shadow: 0 0 40px rgba(255, 215, 106, 0.25), 0 22px 56px rgba(0, 0, 0, 0.6);
+  transform: rotate(45deg);
+  animation: giftBox 0.7s cubic-bezier(0.2, 1.4, 0.4, 1) both;
+}
+@keyframes giftBox {
+  from {
+    transform: rotate(45deg) scale(0.2);
+    opacity: 0;
+  }
+}
+.giftIcon {
+  position: relative;
+  font-size: 84px;
+  line-height: 1;
+  filter: drop-shadow(0 8px 18px rgba(0, 0, 0, 0.55));
+  animation: giftPop 0.8s cubic-bezier(0.2, 1.5, 0.4, 1) 0.15s both, giftFloat 3s ease-in-out 1s infinite;
+}
+@keyframes giftPop {
+  from {
+    transform: scale(0) rotate(-30deg);
+    opacity: 0;
+  }
+}
+@keyframes giftFloat {
+  50% {
+    transform: translateY(-6px) rotate(3deg);
+  }
+}
+.giftSpark {
+  position: absolute;
+  color: #ffd76a;
+  font-size: 18px;
+  animation: giftSpark 1.8s ease-in-out infinite;
+}
+.giftSpark.s1 {
+  left: 8px;
+  top: 30px;
+}
+.giftSpark.s2 {
+  right: 4px;
+  top: 60px;
+  animation-delay: 0.6s;
+}
+.giftSpark.s3 {
+  left: 40px;
+  bottom: 6px;
+  animation-delay: 1.1s;
+  font-size: 14px;
+}
+@keyframes giftSpark {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(0.4);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+.giftName {
+  font-family: "Anton", sans-serif;
+  font-size: 28px;
+  letter-spacing: 0.04em;
+  margin-top: 10px;
+}
+.giftChips {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 8px;
+}
+.giftKind {
+  border-radius: 999px;
+  padding: 3px 11px;
+  font-family: "Anton", sans-serif;
+  font-size: 11px;
+  letter-spacing: 0.12em;
+  border: 1px solid;
+}
+.giftKind.small {
+  padding: 1px 7px;
+  font-size: 9px;
+  margin-left: 8px;
+  vertical-align: 2px;
+}
+.giftKind.wear {
+  color: #7ed6a0;
+  border-color: rgba(126, 214, 160, 0.6);
+  background: rgba(126, 214, 160, 0.08);
+}
+.giftKind.keepsake {
+  color: #c9b3ff;
+  border-color: rgba(201, 179, 255, 0.55);
+  background: rgba(201, 179, 255, 0.08);
+}
+.giftRare {
+  font-size: 11px;
+  color: #ff9ae0;
+  letter-spacing: 0.08em;
+}
+.giftCount {
+  font-size: 10px;
+  letter-spacing: 0.14em;
+  opacity: 0.55;
+}
+.giftBlurb {
+  font-size: 13px;
+  line-height: 1.65;
+  margin: 14px auto 0;
+  max-width: 360px;
+  padding: 12px 14px;
+  border-left: 2px solid #c97e5d;
+  background: rgba(241, 230, 210, 0.05);
+  border-radius: 0 10px 10px 0;
+  text-align: left;
+}
+.giftLink {
+  display: inline-block;
+  margin-top: 10px;
+  font-size: 11px;
+  color: var(--lantern);
+  letter-spacing: 0.06em;
+  text-decoration: none;
+  border-bottom: 1px dotted rgba(255, 179, 94, 0.6);
+}
+.giftLink:hover {
+  color: #fff;
+}
+.giftActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  justify-content: center;
+  margin-top: 20px;
+}
+
+/* a keeper holding out their gift on the last page */
+.dlgGift {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #ffd76a;
+  letter-spacing: 0.03em;
+  animation: rise 0.4s ease;
+}
+.dlgGift b {
+  font-weight: 500;
+}
+.gBtn.giftTake {
+  background: rgba(255, 215, 106, 0.18);
+  border-color: #ffd76a;
+  color: #ffe6a0;
+  animation: soundPulse 1.7s infinite;
+}
+
+/* the Dex pill's new-gift dot */
+.giftDot {
+  margin-left: 2px;
+  font-size: 10px;
+  background: rgba(255, 215, 106, 0.18);
+  border: 1px solid rgba(255, 215, 106, 0.6);
+  color: #ffe6a0;
+  border-radius: 999px;
+  padding: 1px 6px;
+  animation: soundPulse 1.7s infinite;
+}
+.touch #menuBtn .giftDotMenu {
+  position: absolute;
+  bottom: -4px;
+  left: -4px;
+  font-size: 12px;
+}
+
+/* the fit panel: gear rows + what's still out there */
+.gearLocked {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: #ffd76a;
+  opacity: 0.75;
+  align-self: center;
+  padding: 4px 6px;
+  border: 1px dashed rgba(255, 215, 106, 0.4);
+  border-radius: 999px;
+}
+#fitBox {
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+/* ----- the stash (Crate Dex tab) ----- */
+.dexTab.stashTab {
+  --accent: #ffd76a;
+  min-width: 86px;
+}
+.dexTab.stashTab .dexTabKanji {
+  font-size: 17px;
+}
+.stashBody {
+  overflow-y: auto;
+  padding: 16px 20px 22px;
+  flex: 1;
+  min-height: 0;
+}
+.stashIntro {
+  font-size: 12px;
+  line-height: 1.6;
+  opacity: 0.85;
+  max-width: 720px;
+  margin-bottom: 14px;
+}
+.stashIntro b {
+  color: #ffd76a;
+  font-weight: 500;
+}
+.stashTally {
+  display: block;
+  margin-top: 4px;
+  font-size: 10px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.stashGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 8px;
+}
+.stashItem {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(241, 230, 210, 0.04);
+  border: 1px solid rgba(241, 230, 210, 0.1);
+}
+.stashItem.rarity-3 {
+  border-color: rgba(255, 138, 214, 0.45);
+  box-shadow: 0 0 16px rgba(255, 138, 214, 0.12);
+}
+.stashItem.rarity-2 {
+  border-color: rgba(255, 215, 106, 0.3);
+}
+.stashItem.locked {
+  opacity: 0.45;
+  border-style: dashed;
+}
+.stashIcon {
+  flex: 0 0 auto;
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 28px;
+  background: rgba(255, 215, 106, 0.08);
+  border: 1px solid rgba(255, 215, 106, 0.2);
+}
+.stashItem.locked .stashIcon {
+  font-family: "Anton", sans-serif;
+  font-size: 22px;
+  color: rgba(241, 230, 210, 0.5);
+  background: rgba(241, 230, 210, 0.04);
+  border-color: rgba(241, 230, 210, 0.12);
+}
+.stashMeta {
+  min-width: 0;
+}
+.stashName {
+  font-family: "Anton", sans-serif;
+  font-size: 15px;
+  letter-spacing: 0.03em;
+}
+.stashBlurb {
+  font-size: 11px;
+  line-height: 1.5;
+  opacity: 0.75;
+  margin-top: 3px;
+}
+.stashLink {
+  display: inline-block;
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--lantern);
+  text-decoration: none;
+  letter-spacing: 0.04em;
+}
+.stashLink:hover {
+  color: #fff;
+}
+
+@media (max-width: 720px) {
+  .giftStage {
+    width: 160px;
+    height: 160px;
+  }
+  .giftStage::before {
+    width: 118px;
+    height: 118px;
+  }
+  .giftIcon {
+    font-size: 66px;
+  }
+  .giftName {
+    font-size: 24px;
+  }
+  .stashBody {
+    padding: 12px 14px 22px;
+  }
+  .stashGrid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  #fitBox {
+    max-height: 86vh;
+  }
+}
+.stashLockedHead {
+  margin: 18px 0 8px;
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+.stashLocked {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.stashQ {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: grid;
+  place-items: center;
+  font-family: "Anton", sans-serif;
+  font-size: 17px;
+  color: rgba(241, 230, 210, 0.45);
+  border: 1px dashed rgba(241, 230, 210, 0.2);
+  background: rgba(241, 230, 210, 0.03);
+}
+.stashQ.wear {
+  border-color: rgba(126, 214, 160, 0.35);
+}
+.stashQ.keepsake {
+  border-color: rgba(201, 179, 255, 0.35);
+}
+.stashQ.rarity-3 {
+  box-shadow: 0 0 10px rgba(255, 138, 214, 0.18);
+}

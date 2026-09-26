@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { Fit } from "../fits";
-import { mat, ownMat, shade, radialTexture } from "./kit";
+import { mat, ownMat, shade, radialTexture, labelTexture } from "./kit";
 
 // A stylized low-poly listener: chunky faceted head, tapered torso, swinging
 // limbs. Built from a Fit (skin / outfit / hair / hat) so the same look shows in
@@ -49,6 +49,8 @@ export class Character {
   private legL = new THREE.Group();
   private legR = new THREE.Group();
   private hatGroup = new THREE.Group();
+  private gearGroup = new THREE.Group(); // gifted gear on the body (neck / back / top extras)
+  private eyesGroup = new THREE.Group(); // gifted eyewear, rides on the head
   private hairMesh: THREE.Mesh | null = null;
   private halo: THREE.Mesh | null = null;
   private shadow: THREE.Mesh;
@@ -100,12 +102,17 @@ export class Character {
 
   /** Rebuild the look (cheap — a few dozen faces). No-op if the fit is unchanged. */
   setFit(fit: Fit) {
-    const key = `${fit.skin}|${fit.body}|${fit.hair}|${fit.hat}`;
+    const key = `${fit.skin}|${fit.body}|${fit.hair}|${fit.hat}|${fit.top}|${fit.neck}|${fit.eyes}|${fit.back}`;
     if (key === this.fitKey) return;
     this.fitKey = key;
     // drop the old parts (geometries are per-character; materials are cached)
-    for (const g of [this.legL, this.legR, this.armL, this.armR, this.head, this.hatGroup]) {
-      g.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+    for (const g of [this.legL, this.legR, this.armL, this.armR, this.head, this.hatGroup, this.gearGroup, this.eyesGroup]) {
+      g.traverse((o) => {
+        const me = o as THREE.Mesh;
+        me.geometry?.dispose();
+        const m = me.material as THREE.Material | undefined;
+        if (m && !m.userData?.cached) m.dispose();
+      });
       g.clear();
     }
     if (this.torso) {
@@ -116,7 +123,11 @@ export class Character {
     this.hairMesh = null;
 
     const skin = mat(fit.skin);
-    const outfit = mat(fit.body);
+    // the top decides the torso + sleeve colour: the Sombra tee is black, the haori
+    // wraps the torso in indigo (sleeves too), everything else wears the outfit colour
+    const top = fit.top ?? "basic";
+    const outfit = mat(top === "sombra-tee" ? "#1c1916" : fit.body);
+    const sleeveM = top === "haori" ? mat("#2c3a5a") : top === "hoodie" ? mat(shade(fit.body, -18)) : outfit;
     const pants = mat(shade(fit.body, -70));
     const shoe = mat("#1e1814");
     const hair = mat(fit.hair);
@@ -139,6 +150,7 @@ export class Character {
     // ---- torso: a 6-sided frustum, shoulders wider than hips, a collar ring
     const tg = new THREE.CylinderGeometry(8.2, 6.4, TORSO, 6);
     tg.translate(0, TORSO / 2, 0);
+    tg.rotateY(Math.PI / 6); // a flat face to the front (so a chest print sits flush)
     this.torso = new THREE.Mesh(tg, outfit);
     this.torso.position.y = HIP_Y - 1;
     this.torso.castShadow = true;
@@ -149,7 +161,7 @@ export class Character {
       arm.position.set(side * 9.2, HIP_Y - 1 + SHOULDER_Y, 0);
       const ag = new THREE.CylinderGeometry(2.4, 2.0, 11, 5);
       ag.translate(0, -5.5, 0);
-      const sleeve = new THREE.Mesh(ag, outfit);
+      const sleeve = new THREE.Mesh(ag, sleeveM);
       sleeve.castShadow = true;
       const hand = new THREE.Mesh(new THREE.IcosahedronGeometry(2.6, 0), skin);
       hand.position.y = -12.5;
@@ -172,7 +184,7 @@ export class Character {
       cheek.position.set(side * 5.6, -2.6, HEAD_R - 1.9);
       this.head.add(cheek);
     }
-    const covers = fit.hat === "beanie" || fit.hat === "cap";
+    const covers = fit.hat === "beanie" || fit.hat === "cap" || fit.hat === "bucket";
     if (!covers) {
       // a faceted cap of hair over the crown + back, leaving the face open
       const hg = new THREE.SphereGeometry(HEAD_R + 1.1, 7, 5, 0, Math.PI * 2, 0, Math.PI * 0.52);
@@ -190,7 +202,151 @@ export class Character {
     }
     this.buildHat(fit);
     this.head.add(this.hatGroup);
+    this.buildGear(fit);
+    this.body.add(this.gearGroup);
+    this.head.add(this.eyesGroup);
     this.body.add(this.head);
+  }
+
+  /** Gifted gear (lib/bar/gifts.ts): the top's extras, neckwear, eyewear, back piece. */
+  private buildGear(fit: Fit) {
+    const g = this.gearGroup;
+    const e = this.eyesGroup;
+    const chestY = HIP_Y - 1 + TORSO * 0.62; // print / pendant height
+    const neckY = HIP_Y - 1 + TORSO - 1.2;
+    const add = (m: THREE.Mesh, to = g) => {
+      m.castShadow = true;
+      to.add(m);
+      return m;
+    };
+    // ---- tops
+    if (fit.top === "sombra-tee") {
+      const print = new THREE.Mesh(
+        new THREE.PlaneGeometry(7.2, 7.2),
+        new THREE.MeshLambertMaterial({ map: sunMoonTexture(), transparent: true, depthWrite: false })
+      );
+      print.position.set(0, chestY, 6.75);
+      print.rotation.x = -0.1;
+      g.add(print);
+    } else if (fit.top === "haori") {
+      // an open-front jacket over the outfit — the gap at the front shows it
+      const jg = new THREE.CylinderGeometry(8.9, 7.2, TORSO - 1.5, 6, 1, true, Math.PI * 0.18, Math.PI * 2 - Math.PI * 0.36);
+      jg.translate(0, (TORSO - 1.5) / 2, 0);
+      const jacket = add(new THREE.Mesh(jg, mat("#2c3a5a", { side: THREE.DoubleSide })));
+      jacket.position.y = HIP_Y - 0.5;
+      const belt = add(new THREE.Mesh(new THREE.CylinderGeometry(7.3, 7.3, 2, 6), mat("#c0432f")));
+      belt.position.y = HIP_Y + 2.5;
+    } else if (fit.top === "hoodie") {
+      const hood = add(new THREE.Mesh(new THREE.SphereGeometry(7.4, 7, 4, 0, Math.PI * 2, 0, Math.PI / 2), mat(shade(fit.body, -30))));
+      hood.position.set(0, neckY - 1, -4.6);
+      hood.rotation.x = -1.15;
+      for (const sx of [-1.8, 1.8]) {
+        const cord = add(new THREE.Mesh(new THREE.BoxGeometry(0.6, 5, 0.6), mat("#efe6d6")));
+        cord.position.set(sx, neckY - 3.5, 6.9);
+      }
+      const pocket = add(new THREE.Mesh(new THREE.BoxGeometry(8, 3.4, 0.8), mat(shade(fit.body, -24))));
+      pocket.position.set(0, HIP_Y + 3.5, 6.6);
+    }
+    // ---- neck
+    const gold = mat("#e8b84a", { emissive: "#b8862e", glow: 0.25 });
+    if (fit.neck === "chain" || fit.neck === "record") {
+      const chain = add(new THREE.Mesh(new THREE.TorusGeometry(6.2, fit.neck === "chain" ? 0.75 : 0.4, 4, 14), gold));
+      chain.rotation.x = Math.PI / 2 - 0.45;
+      chain.position.set(0, neckY - 2.2, 1.6);
+      if (fit.neck === "record") {
+        const disc = add(new THREE.Mesh(new THREE.CylinderGeometry(2.8, 2.8, 0.7, 14), gold));
+        disc.rotation.x = Math.PI / 2;
+        disc.position.set(0, chestY + 0.5, 7.4);
+        const hole = add(new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 0.8, 8), mat("#1a130d")));
+        hole.rotation.x = Math.PI / 2;
+        hole.position.set(0, chestY + 0.5, 7.5);
+      } else {
+        const tag = add(new THREE.Mesh(new THREE.IcosahedronGeometry(1.3, 0), gold));
+        tag.position.set(0, chestY + 1.2, 7.3);
+      }
+    } else if (fit.neck === "usb") {
+      const lanyard = add(new THREE.Mesh(new THREE.TorusGeometry(6.1, 0.5, 3, 14), mat("#a8352a")));
+      lanyard.rotation.x = Math.PI / 2 - 0.55;
+      lanyard.position.set(0, neckY - 3, 2.2);
+      const stick = add(new THREE.Mesh(new THREE.BoxGeometry(2.8, 4.6, 1.3), mat("#2a2a30")));
+      stick.position.set(0, chestY - 0.5, 7.2);
+      const tip = add(new THREE.Mesh(new THREE.BoxGeometry(2, 1.6, 1), mat("#c8c8d0")));
+      tip.position.set(0, chestY - 3.4, 7.2);
+      const led = add(new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.8, 0.4), mat("#7ed6a0", { emissive: "#7ed6a0", glow: 0.9 })));
+      led.position.set(0, chestY + 0.8, 7.9);
+    } else if (fit.neck === "mala") {
+      const bead = mat("#8a4a2e");
+      for (let i = 0; i < 16; i++) {
+        const a = (i / 16) * Math.PI * 2;
+        const b = add(new THREE.Mesh(new THREE.IcosahedronGeometry(0.95, 0), bead));
+        b.position.set(Math.sin(a) * 6.2, neckY - 2 - Math.max(0, Math.cos(a)) * 4.2, Math.cos(a) * 6.2 + 1);
+      }
+      const tassel = add(new THREE.Mesh(new THREE.ConeGeometry(1.1, 3.2, 5), mat("#c0432f")));
+      tassel.position.set(0, chestY - 1.5, 7.4);
+    }
+    // ---- eyes (ride on the head so they nod along)
+    if (fit.eyes === "shades") {
+      const dark = mat("#111114");
+      for (const side of [-1, 1]) {
+        const lens = add(new THREE.Mesh(new THREE.BoxGeometry(4, 2.8, 0.8), dark), e);
+        lens.position.set(side * 3.9, 0.6, HEAD_R - 0.1);
+        const arm = add(new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.6, 6), dark), e);
+        arm.position.set(side * 6.2, 1.1, HEAD_R - 3.6);
+      }
+      const bridge = add(new THREE.Mesh(new THREE.BoxGeometry(3.6, 0.7, 0.6), dark), e);
+      bridge.position.set(0, 1.4, HEAD_R + 0.1);
+    } else if (fit.eyes === "specs") {
+      const wire = mat("#c8a060");
+      for (const side of [-1, 1]) {
+        const ring = add(new THREE.Mesh(new THREE.TorusGeometry(1.9, 0.32, 4, 10), wire), e);
+        ring.position.set(side * 3.8, 0.4, HEAD_R + 0.05);
+      }
+      const bridge = add(new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.4, 0.4), wire), e);
+      bridge.position.set(0, 0.9, HEAD_R + 0.1);
+    }
+    // ---- back
+    if (fit.back === "crate") {
+      const wood = mat("#9a7442");
+      const crate = add(new THREE.Mesh(new THREE.BoxGeometry(13, 10, 8), wood));
+      crate.position.set(0, HIP_Y + 9, -9.5);
+      const recs = ["#c0432f", "#1a1410", "#ffb35e", "#56877e"];
+      for (let i = 0; i < 4; i++) {
+        const r = add(new THREE.Mesh(new THREE.BoxGeometry(9, 9, 0.8), mat(recs[i])));
+        r.position.set(0, HIP_Y + 15, -12.5 + i * 2);
+        r.rotation.x = 0.12;
+      }
+      for (const sx of [-4, 4]) {
+        const strap = add(new THREE.Mesh(new THREE.BoxGeometry(1.2, 12, 1), mat("#3a2817")));
+        strap.position.set(sx, neckY - 5, 5.8);
+        strap.rotation.x = -0.2;
+      }
+    } else if (fit.back === "tote") {
+      const bag = add(new THREE.Mesh(new THREE.BoxGeometry(2.4, 10, 9), mat("#e8dcc4")));
+      bag.position.set(9.8, HIP_Y + 1, -1.5);
+      const mark = new THREE.Mesh(
+        new THREE.PlaneGeometry(6, 6),
+        new THREE.MeshLambertMaterial({ map: sunMoonTexture("#1c1916"), transparent: true, depthWrite: false })
+      );
+      mark.position.set(11.05, HIP_Y + 1, -1.5);
+      mark.rotation.y = Math.PI / 2;
+      g.add(mark);
+      const strap = add(new THREE.Mesh(new THREE.BoxGeometry(1, 20, 1), mat("#c9b48a")));
+      strap.position.set(3, neckY - 6, 0);
+      strap.rotation.z = 0.62;
+    } else if (fit.back === "gong") {
+      const bronze = mat("#c08a3a", { emissive: "#6a4414", glow: 0.25 });
+      const gong = add(new THREE.Mesh(new THREE.CylinderGeometry(7.5, 7.5, 0.9, 16), bronze));
+      gong.rotation.x = Math.PI / 2;
+      gong.position.set(0, HIP_Y + 10, -8.2);
+      const boss = add(new THREE.Mesh(new THREE.CylinderGeometry(2.2, 2.6, 1.4, 10), bronze));
+      boss.rotation.x = Math.PI / 2;
+      boss.position.set(0, HIP_Y + 10, -8.9);
+      const rim = add(new THREE.Mesh(new THREE.TorusGeometry(7.6, 0.6, 4, 16), mat("#3a2817")));
+      rim.position.set(0, HIP_Y + 10, -8.2);
+      const cord = add(new THREE.Mesh(new THREE.BoxGeometry(0.8, 14, 0.8), mat("#3a2817")));
+      cord.position.set(-4, neckY - 5, 5.6);
+      cord.rotation.z = -0.35;
+    }
   }
 
   private buildHat(fit: Fit) {
@@ -246,6 +402,21 @@ export class Character {
         ring.position.y = HEAD_R + 6;
         this.halo = ring;
         g.add(ring);
+        break;
+      }
+      case "bucket": {
+        const cloth = mat("#b8a47a");
+        // a soft crown + a short, down-turned brim (wide enough to read, small
+        // enough that the face still shows from the overhead camera)
+        const crown = new THREE.Mesh(new THREE.CylinderGeometry(HEAD_R * 0.78, HEAD_R + 0.9, 6, 8), cloth);
+        crown.position.y = HEAD_R * 0.5;
+        crown.castShadow = true;
+        const brim = new THREE.Mesh(new THREE.CylinderGeometry(HEAD_R + 1, HEAD_R + 3.2, 2.2, 10, 1, true), mat(shade("#b8a47a", -20), { side: THREE.DoubleSide }));
+        brim.position.y = HEAD_R * 0.5 - 3.6;
+        brim.castShadow = true;
+        const band = new THREE.Mesh(new THREE.CylinderGeometry(HEAD_R + 0.95, HEAD_R + 0.95, 1.4, 8), mat("#3a2817"));
+        band.position.y = HEAD_R * 0.5 - 2;
+        g.add(crown, brim, band);
         break;
       }
       case "phones": {
@@ -375,6 +546,32 @@ export class Character {
       if (m && !m.userData?.cached) m.dispose();
     });
   }
+}
+
+// the ☉☽ mark, drawn (not a font glyph) — shared by every Sombra tee / tote
+const sunMoonTex = new Map<string, THREE.Texture>();
+function sunMoonTexture(color = "#ffb35e"): THREE.Texture {
+  let t = sunMoonTex.get(color);
+  if (t) return t;
+  const l = labelTexture(64, 64, (c) => {
+    c.strokeStyle = color;
+    c.fillStyle = color;
+    c.lineWidth = 4.5;
+    c.beginPath();
+    c.arc(20, 32, 12, 0, Math.PI * 2);
+    c.stroke();
+    c.beginPath();
+    c.arc(20, 32, 3.6, 0, Math.PI * 2);
+    c.fill();
+    c.beginPath();
+    c.arc(46, 32, 13, Math.PI * 0.5, Math.PI * 1.5, false);
+    c.arc(40, 32, 10, Math.PI * 1.5, Math.PI * 0.5, true);
+    c.fill();
+  }, 2);
+  t = l.tex;
+  t.userData.cached = true;
+  sunMoonTex.set(color, t);
+  return t;
 }
 
 /** yaw (radians around +Y) that faces a plan-space direction (dx right, dy down) */

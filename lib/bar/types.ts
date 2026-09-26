@@ -51,6 +51,8 @@ export interface RemotePlayer {
    *  callers default skin to a mid tone and hat to "none". */
   skin: string;
   hat: string;
+  /** gifted gear code "top.neck.eyes.back" (older clients omit it → basic) */
+  gear?: string;
   /** which venue room this listener is currently in (for per-room avatar render) */
   room: string;
 }

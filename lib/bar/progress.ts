@@ -82,10 +82,14 @@ export interface Progress {
   secrets: Record<string, number>;
   talked: Record<string, number>;
   badges: Record<string, number>;
+  /** gifts you've been given (lib/bar/gifts.ts) → when */
+  gifts: Record<string, number>;
+  /** digs in a row that turned up no gift (a gift is guaranteed after a few) */
+  giftMiss: number;
 }
 
 const KEY = "hallucinate-progress-v1";
-const empty = (): Progress => ({ visited: {}, seen: {}, dug: {}, secrets: {}, talked: {}, badges: {} });
+const empty = (): Progress => ({ visited: {}, seen: {}, dug: {}, secrets: {}, talked: {}, badges: {}, gifts: {}, giftMiss: 0 });
 
 let state: Progress = empty();
 let loaded = false;
@@ -181,6 +185,20 @@ export function markSecret(id: string): { first: boolean } {
   state.secrets = { ...state.secrets, [id]: Date.now() };
   save();
   return { first: true };
+}
+
+/** Record a gift as yours. Returns false if you already had it. */
+export function markGift(id: string): boolean {
+  load();
+  if (state.gifts[id]) return false;
+  state.gifts = { ...state.gifts, [id]: Date.now() };
+  save();
+  return true;
+}
+export function setGiftMiss(n: number) {
+  load();
+  state.giftMiss = n;
+  save();
 }
 
 export function markTalked(room: string) {

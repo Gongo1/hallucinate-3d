@@ -25,6 +25,25 @@ HALLUCINATE plays like **Pokémon meets crate-digging**. Each room is a *realm* 
   - The lucky cat, the map's dice and the R key all send you to a random realm.
 - **Movement:** speed is 240 (Shift sprints ×1.5, and clicked routes ×1.3). Clicking the floor or a thing routes around fixtures, and clicking a thing also uses it on arrival. The rave portal still needs an explicit E, per its rule.
 
+## Gifts (you start in basic clothes)
+`lib/bar/gifts.ts` has 36 gifts: 18 **wearables** and 18 **keepsakes**. Each has a line that teaches a bit of Sombra, and some have a link (the Sombra site, /hum, La Hora, Gongo's SoundCloud, @sombra.atx, or the tribute rooms' own pages).
+
+**Wearables** fill the gear slots on `Fit`, which are drawn on the 3D character and broadcast to everyone as the presence `gear` code:
+- hat (the old five + a bucket hat)
+- top (Sombra tee, haori, hoodie)
+- neck (chain, USB lanyard, mala, gold record)
+- eyes (shades, specs)
+- back (crate pack, tote, mini gong)
+
+**When gifts drop:**
+- **Keepers:** every keeper gives a signature gift the first time you talk to them. Rio's welcome is the **Sombra tee**.
+- **Adding records:** your first 新着 paste earns the **USB lanyard**.
+- **Guaranteed:** secrets and badges always gift.
+- **By chance:** digs gift 40% of the time, and after 2 dry digs the next one is guaranteed. Keeps gift 20% of the time and first visits 30%.
+- **Weighting:** rare pieces (halo, gong, gold record) come up less often.
+
+**Existing players:** `grandfatherFit` makes their old hat theirs, so nobody gets undressed by the update. `clampFit` keeps a fit to owned gear.
+
 ## Guardrails
 - Keep the placements valid:
   - Piles, keepers and hatches must sit on open floor, away from other zones, and be reachable by path from every spawn.

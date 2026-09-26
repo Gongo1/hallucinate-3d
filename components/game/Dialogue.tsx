@@ -17,12 +17,15 @@ export function Dialogue({
   onClose,
   onMap,
   onWander,
+  gift,
 }: {
   room: string;
   advanceRef: MutableRefObject<(() => void) | null>;
   onClose: () => void;
   onMap: () => void;
   onWander: () => void;
+  /** a gift this keeper is holding for you — handed over when you close */
+  gift?: { icon: string; name: string } | null;
 }) {
   const realm = REALMS[room];
   const keeper = realm?.keeper;
@@ -91,6 +94,11 @@ export function Dialogue({
             {text.slice(0, chars)}
             <span className="dlgGhost">{text.slice(chars)}</span>
           </div>
+          {gift && done && last && (
+            <div className="dlgGift">
+              {keeper.name} holds out something — {gift.icon} <b>{gift.name}</b>
+            </div>
+          )}
           <div className="dlgFoot">
             <span className="dlgPages">
               {lines.map((_, i) => (
@@ -99,6 +107,11 @@ export function Dialogue({
             </span>
             {done && last ? (
               <span className="dlgActions" onClick={(e) => e.stopPropagation()}>
+                {gift && (
+                  <button className="gBtn small giftTake" onClick={onClose}>
+                    🎁 take the gift
+                  </button>
+                )}
                 <button className="gBtn small" onClick={onMap}>
                   🗺 map
                 </button>

@@ -8,7 +8,7 @@ import {
   MAX_CUE_LENGTH,
   type FlowLimits,
 } from "./flow";
-import { defaultFit, type Fit } from "./fits";
+import { defaultFit, gearCode, type Fit } from "./fits";
 
 // The lobby + the SHARED ROOM PLAYER. One Supabase Realtime channel carries
 // several ephemeral streams (no DB tables — additive to the shared sombra
@@ -113,6 +113,8 @@ interface TrackMeta {
   hair: string;
   skin?: string;
   hat?: string;
+  /** gifted gear, "top.neck.eyes.back" (fits.gearCode) — older clients omit it */
+  gear?: string;
   /** which VENUE ROOM (scenery) this listener is in — for per-room avatar render.
    *  Distinct from RoomState (the shared audio/cue state); presence is venue-wide. */
   vroom?: string;
@@ -663,6 +665,7 @@ export class BarPresence {
       hair: this.fit.hair,
       skin: this.fit.skin,
       hat: this.fit.hat,
+      gear: gearCode(this.fit),
       vroom: this.venueRoom,
     };
   }
@@ -724,6 +727,7 @@ export class BarPresence {
           r.hair = m.hair;
           if (m.skin) r.skin = m.skin;
           if (m.hat) r.hat = m.hat;
+          if (m.gear) r.gear = m.gear;
           if (m.vroom) r.room = m.vroom; // keep avatar's room in sync via presence
         }
       } else {
@@ -788,6 +792,7 @@ export class BarPresence {
       hair: meta?.hair ?? "#1b1b22",
       skin: meta?.skin ?? "#cf9268",
       hat: meta?.hat ?? "none",
+      gear: meta?.gear,
       room: meta?.vroom ?? "kissa",
     };
     this.byId.set(id, r);

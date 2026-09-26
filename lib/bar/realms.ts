@@ -47,7 +47,7 @@ export interface Realm {
   map: { x: number; y: number };
 }
 
-const fit = (skin: string, body: string, hair: string, hat: Fit["hat"] = "none"): Fit => ({ skin, body, hair, hat });
+const fit = (skin: string, body: string, hair: string, hat: Fit["hat"] = "none", gear: Partial<Fit> = {}): Fit => ({ skin, body, hair, hat, ...gear });
 
 export const REALMS: Record<string, Realm> = {
   kissa: {
@@ -63,7 +63,7 @@ export const REALMS: Record<string, Realm> = {
       title: "record scout",
       x: 300,
       y: 470,
-      fit: fit("#cf9268", "#c0432f", "#1b1b22", "phones"),
+      fit: fit("#cf9268", "#c0432f", "#1b1b22", "phones", { top: "sombra-tee", neck: "usb" }),
       lines: [
         "Hey — welcome to HALLUCINATE. Sombra's listening bar. The room never closes.",
         "This place is for digging. Every realm has crates, and piles of records buried in the corners. See the glinting mounds? Walk up and dig.",
@@ -91,7 +91,7 @@ export const REALMS: Record<string, Realm> = {
       title: "koi keeper",
       x: 930,
       y: 470,
-      fit: fit("#e6b184", "#56877e", "#241812", "beanie"),
+      fit: fit("#e6b184", "#56877e", "#241812", "bucket", { back: "tote" }),
       lines: [
         "Shh — the koi are listening too.",
         "Sombra's soaks at BATHE end in a garden like this one: warm water, open sky, a slow set drifting over it.",
@@ -118,7 +118,7 @@ export const REALMS: Record<string, Realm> = {
       title: "tea keeper",
       x: 360,
       y: 310,
-      fit: fit("#f4cda3", "#7e6fb0", "#15151a", "flower"),
+      fit: fit("#f4cda3", "#7e6fb0", "#15151a", "flower", { top: "haori", neck: "mala" }),
       lines: [
         "Sit a while. Slow down until the room can actually listen.",
         "At HUM, six sound healers circle the room — bowls, gongs, tones, breath. This room keeps a little of that quiet.",
@@ -176,7 +176,7 @@ export const REALMS: Record<string, Realm> = {
       x: 760,
       y: 262,
       zone: { x: 760, y: 405 },
-      fit: fit("#cf9268", "#2c3a5a", "#1b1b22", "beanie"),
+      fit: fit("#cf9268", "#2c3a5a", "#1b1b22", "beanie", { eyes: "specs" }),
       lines: [
         "Omakase — 'I leave it to you.' Trust the selector.",
         "A good set is a meal. Courses, pacing, silence between. Sombra plays it long and patient.",
@@ -203,7 +203,7 @@ export const REALMS: Record<string, Realm> = {
       title: "the door",
       x: 980,
       y: 250,
-      fit: fit("#f4cda3", "#26262b", "#0c0c0e", "cap"),
+      fit: fit("#f4cda3", "#26262b", "#0c0c0e", "cap", { eyes: "shades", neck: "chain" }),
       lines: [
         "No photos. House only. You're in.",
         "The Detroit crate lives here. Machines with soul.",
@@ -230,7 +230,7 @@ export const REALMS: Record<string, Realm> = {
       title: "909 tech",
       x: 1020,
       y: 620,
-      fit: fit("#7a4e30", "#caa06a", "#15151a", "cap"),
+      fit: fit("#7a4e30", "#caa06a", "#15151a", "cap", { back: "crate" }),
       lines: [
         "Careful with the 909. She's older than both of us.",
         "Chicago, mid-'80s: a drum machine, a basement, and a crowd that didn't want to go home. That's the root of everything Sombra plays.",
@@ -257,7 +257,7 @@ export const REALMS: Record<string, Realm> = {
       title: "lifeguard",
       x: 850,
       y: 300,
-      fit: fit("#a36b45", "#c97e5d", "#2a1c12", "flower"),
+      fit: fit("#a36b45", "#c97e5d", "#2a1c12", "flower", { eyes: "shades" }),
       lines: [
         "¡Hola! Water's warm, the fire's lit.",
         "Sombra loves a sunset set — the desert outside Marfa, Big Bond in Terlingua. Here the sun just keeps going down.",
@@ -284,7 +284,7 @@ export const REALMS: Record<string, Realm> = {
       title: "night watch",
       x: 960,
       y: 350,
-      fit: fit("#e6b184", "#5a86a8", "#5a3a22", "none"),
+      fit: fit("#e6b184", "#5a86a8", "#5a3a22", "none", { top: "hoodie" }),
       lines: [
         "Best view in the venue. Don't tell the Kissa.",
         "Skyline is the melodic crate — records for the hour when the city lights come on.",
@@ -338,7 +338,7 @@ export const REALMS: Record<string, Realm> = {
       title: "archivist",
       x: 1000,
       y: 650,
-      fit: fit("#e6b184", "#3f7d5a", "#9a9aa2", "none"),
+      fit: fit("#e6b184", "#3f7d5a", "#9a9aa2", "none", { eyes: "specs", neck: "record" }),
       lines: [
         "Quiet, please. Every record in here was somebody's secret once.",
         "Sombra digs deep: not the hits, the B-side of the B-side. This room is where that habit lives.",
@@ -366,7 +366,7 @@ export const REALMS: Record<string, Realm> = {
       x: 253,
       y: 612,
       solid: false,
-      fit: fit("#f4cda3", "#7e9b5e", "#b0593a", "cap"),
+      fit: fit("#f4cda3", "#7e9b5e", "#b0593a", "cap", { back: "tote" }),
       lines: [
         "Lost? Good. That's the idea.",
         "The Stacks crate is hidden in the very centre. Follow the long corridor, then double back.",

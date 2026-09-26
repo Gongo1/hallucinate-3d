@@ -17,7 +17,11 @@ import {
   type Progress,
 } from "@/lib/bar/progress";
 import type { Shelf, Track } from "@/lib/bar/types";
+import { GIFTS } from "@/lib/bar/gifts";
 import { TierChip, cueLabel, recordLink, type FlowUi } from "./shared";
+
+/** the special tab id for your gift stash */
+export const STASH = "stash";
 
 export function Dex({
   progress,
@@ -28,6 +32,8 @@ export function Dex({
   onCue,
   onClose,
   onMap,
+  startTab,
+  onSeeStash,
 }: {
   progress: Progress;
   shelves: Shelf[];
@@ -37,8 +43,17 @@ export function Dex({
   onCue: (t: Track) => void;
   onClose: () => void;
   onMap: () => void;
+  /** open on a realm id or STASH (default: the current realm) */
+  startTab?: string;
+  /** the stash was looked at (clears the HUD's new-gift dot) */
+  onSeeStash?: () => void;
 }) {
-  const [sel, setSel] = useState(REALMS[room] ? room : "kissa");
+  const [sel, setSelRaw] = useState(startTab ?? (REALMS[room] ? room : "kissa"));
+  const setSel = (id: string) => {
+    setSelRaw(id);
+    if (id === STASH) onSeeStash?.();
+  };
+  const giftCount = GIFTS.filter((g) => progress.gifts?.[g.id]).length;
   const dugCount = Object.keys(progress.dug).length;
   const total = shelves.reduce((n, s) => n + (s.ingest ? 0 : s.records.length), 0);
   const title = titleFor(dugCount);
@@ -47,9 +62,11 @@ export function Dex({
   const secrets = SECRETS.filter((s) => progress.secrets[s.id]).length;
   const badges = REALM_ORDER.filter((r) => progress.badges[r]).length;
 
-  const realm = REALMS[sel];
-  const visited = !!progress.visited[sel];
-  const recs = useMemo(() => realmRecords(sel, shelves), [sel, shelves]);
+  const isStash = sel === STASH;
+  const realmId = isStash ? room : sel;
+  const realm = REALMS[realmId] ?? REALMS.kissa;
+  const visited = !!progress.visited[realmId];
+  const recs = useMemo(() => realmRecords(realmId, shelves), [realmId, shelves]);
   const byShelf = useMemo(() => {
     const m = new Map<string, { shelf: Shelf; total: number; dug: number }>();
     for (const { track, shelf } of recs) {
@@ -103,6 +120,7 @@ export function Dex({
             <Stat n={`${stamped}`} of={`/${REALM_ORDER.length}`} label="realms stamped" />
             <Stat n={`${secrets}`} of={`/${SECRETS.length}`} label="secrets" />
             <Stat n={`${badges}`} of="" label="badges" />
+            <Stat n={`${giftCount}`} of={`/${GIFTS.length}`} label="gifts" />
             <button className="gBtn small" onClick={onMap}>
               🗺 map
             </button>
@@ -110,6 +128,16 @@ export function Dex({
         </div>
 
         <div className="dexTabs">
+          <button
+            className={"dexTab stashTab" + (isStash ? " on" : "")}
+            onClick={() => setSel(STASH)}
+            title="your gift stash"
+          >
+            <span className="dexTabKanji">🎁</span>
+            <span className="dexTabName">
+              STASH {giftCount}/{GIFTS.length}
+            </span>
+          </button>
           {REALM_ORDER.map((id) => {
             const r = REALMS[id];
             const v = !!progress.visited[id];
@@ -129,6 +157,9 @@ export function Dex({
           })}
         </div>
 
+        {isStash ? (
+          <Stash progress={progress} />
+        ) : (
         <div className="dexBody">
           <div className="dexRealm" style={{ ["--accent" as string]: realm.color }}>
             <div className="dexRealmKanji">{visited ? realm.kanji : "?"}</div>
@@ -205,6 +236,7 @@ export function Dex({
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );
@@ -218,6 +250,74 @@ function Stat({ n, of, label }: { n: string; of: string; label: string }) {
         <span>{of}</span>
       </div>
       <div className="dexStatL">{label}</div>
+    </div>
+  );
+}
+
+/** Every gift in the bar — yours in full, the rest as "?" silhouettes. */
+function Stash({ progress }: { progress: Progress }) {
+  const gifts = [...GIFTS].sort((a, b) => {
+    const oa = progress.gifts?.[a.id] ?? 0;
+    const ob = progress.gifts?.[b.id] ?? 0;
+    if (!!oa !== !!ob) return oa ? -1 : 1;
+    return ob - oa;
+  });
+  const wear = GIFTS.filter((g) => g.kind === "wear");
+  const keep = GIFTS.filter((g) => g.kind === "keepsake");
+  const own = (list: typeof GIFTS) => list.filter((g) => progress.gifts?.[g.id]).length;
+  return (
+    <div className="stashBody">
+      <div className="stashIntro">
+        You arrived in basic clothes. Everything here was <b>gifted</b> — by the keepers, the piles, the
+        crates, the secrets. Wear the gear (◇ your fit); the keepsakes each tell you a little more about
+        what Sombra is.
+        <span className="stashTally">
+          {own(wear)}/{wear.length} to wear · {own(keep)}/{keep.length} keepsakes
+        </span>
+      </div>
+      <div className="stashGrid">
+        {gifts
+          .filter((g) => progress.gifts?.[g.id])
+          .map((g) => (
+            <div className={"stashItem rarity-" + g.rarity} key={g.id}>
+              <div className="stashIcon">{g.icon}</div>
+              <div className="stashMeta">
+                <div className="stashName">
+                  {g.name}
+                  <span className={"giftKind small " + (g.kind === "wear" ? "wear" : "keepsake")}>
+                    {g.kind === "wear" ? `WEAR · ${g.slot}` : "KEEPSAKE"}
+                  </span>
+                </div>
+                <div className="stashBlurb">{g.blurb}</div>
+                {g.link && (
+                  <a className="stashLink" href={g.link} target="_blank" rel="noopener noreferrer">
+                    {g.link.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")} ↗
+                  </a>
+                )}
+              </div>
+            </div>
+          ))}
+      </div>
+      {gifts.some((g) => !progress.gifts?.[g.id]) && (
+        <>
+          <div className="stashLockedHead">
+            still out there — talk to every keeper, dig the piles, keep records, bring records, find the secrets
+          </div>
+          <div className="stashLocked">
+            {gifts
+              .filter((g) => !progress.gifts?.[g.id])
+              .map((g) => (
+                <div
+                  className={"stashQ " + (g.kind === "wear" ? "wear" : "keepsake") + " rarity-" + g.rarity}
+                  key={g.id}
+                  title={g.kind === "wear" ? `something to wear (${g.slot})` : "a keepsake"}
+                >
+                  ?
+                </div>
+              ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

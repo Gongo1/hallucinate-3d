@@ -1,7 +1,7 @@
 import type { Shelf, RemotePlayer } from "./types";
 import { ROOMS, HUB_ROOM, type RoomDef, type RoomDoor } from "./rooms";
 import { CURATORS, type CuratorRoom } from "./curators";
-import { SKINS, HATS, type Fit, type Hat } from "./fits";
+import { SKINS, HATS, NECKS, EYES, parseGear, type Fit, type Hat, type Neck, type Eyes } from "./fits";
 import {
   ROOM, WALL, KISSA, KISSA_SEATED, KISSA_MASTER, GARDEN, OMAKASE, BERLIN, TEA, CURATOR,
   PLAYA, WAREHOUSE, ROOFTOP, TRATTORIA, ARCHIVE, LAB_GRID, LAB_COLS, LAB_ROWS, LAB_CW, LAB_CH,
@@ -68,6 +68,8 @@ interface Npc extends Entity {
   hair: string;
   skin: string;
   hat: Hat;
+  neck: Neck;
+  eyes: Eyes;
   speed: number;
   r: number;
 }
@@ -643,6 +645,9 @@ export class BarEngine {
     const skin = SKINS[Math.floor(Math.random() * SKINS.length)];
     const hat: Hat =
       Math.random() < 0.4 ? HATS[1 + Math.floor(Math.random() * (HATS.length - 1))] : "none";
+    // …and the odd bit of gifted gear, so newcomers can see what's out there to earn
+    const neck: Neck = Math.random() < 0.3 ? NECKS[1 + Math.floor(Math.random() * (NECKS.length - 1))] : "none";
+    const eyes: Eyes = Math.random() < 0.25 ? EYES[1 + Math.floor(Math.random() * (EYES.length - 1))] : "none";
     return {
       x: pts[0].x,
       y: pts[0].y,
@@ -655,6 +660,8 @@ export class BarEngine {
       hair,
       skin,
       hat,
+      neck,
+      eyes,
       speed: 70 + Math.random() * 28,
       r: 12,
     };
@@ -1028,6 +1035,9 @@ export class BarEngine {
   private update(dt: number) {
     this.updatePhaseLight(dt); // keep the sky melting even with an overlay open
     if (this.cb.isOverlayOpen()) {
+      // a room change already under way finishes (a gift card that pops as you
+      // take a passage greets you on arrival, it doesn't freeze the fade)
+      this.updateTransition(dt);
       this.updatePrompt();
       return;
     }
@@ -1390,7 +1400,7 @@ export class BarEngine {
         id: `npc:${this.room.id}:${i}`,
         x: n.x,
         y: n.y,
-        fit: { skin: n.skin, body: n.color, hair: n.hair, hat: n.hat },
+        fit: { skin: n.skin, body: n.color, hair: n.hair, hat: n.hat, neck: n.neck, eyes: n.eyes },
         moving: n.wait <= 0,
       })),
       ...this.remoteActors(), // other live listeners IN THIS ROOM (the lobby)
@@ -1477,7 +1487,7 @@ export class BarEngine {
           id: `r:${r.id}`,
           x: r.x,
           y: r.y,
-          fit: { skin: r.skin, body: r.color, hair: r.hair, hat: (r.hat as Hat) ?? "none" },
+          fit: { skin: r.skin, body: r.color, hair: r.hair, hat: (r.hat as Hat) ?? "none", ...parseGear(r.gear) },
           moving: d > 0.8, // walk cycle only while closing distance
         };
       });
