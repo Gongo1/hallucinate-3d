@@ -374,7 +374,7 @@ const WAREHOUSE: RoomDef = {
       w: 104,
       h: 24,
       facing: "down",
-      label: "stairs to the roof",
+      label: "up to the roof",
     },
   ],
   spawns: {

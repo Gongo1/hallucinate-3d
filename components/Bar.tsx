@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { BarEngine } from "@/lib/bar/engine";
+import { drawFit } from "@/lib/bar/three/preview";
 import { BarPlayer, type PlayerState } from "@/lib/bar/player";
 import {
   BarPresence,
@@ -1329,85 +1330,32 @@ function AddedBoard({
 }
 
 /* ------------------------------------------------------------ fit */
-// A front-facing SVG echo of engine.person — head (skin), body (outfit), hair,
-// and the hat. Used for the live preview + the swatch chips.
-function AvatarPreview({ fit, size = 96 }: { fit: Fit; size?: number }) {
-  const covers = fit.hat === "beanie" || fit.hat === "cap";
+// The fit preview: the same low-poly character the room renders (one shared
+// WebGL renderer copies into this canvas — see lib/bar/three/preview.ts). The big
+// stage preview idles + turns; the tiny intro icon is a still.
+function AvatarPreview({ fit, size = 96, animate = false }: { fit: Fit; size?: number; animate?: boolean }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const cv = ref.current;
+    if (!cv) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cv.width = Math.round(size * dpr);
+    cv.height = Math.round(size * dpr);
+    let raf = 0;
+    const t0 = performance.now();
+    const draw = () => {
+      drawFit(cv, fit, (performance.now() - t0) / 1000, animate);
+      if (animate) raf = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => cancelAnimationFrame(raf);
+  }, [fit, size, animate]);
   return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 60 60"
-      style={{ display: "block", flex: "0 0 auto" }}
+    <canvas
+      ref={ref}
+      style={{ width: size, height: size, display: "block", flex: "0 0 auto" }}
       aria-hidden="true"
-    >
-      {/* floating shadow */}
-      <ellipse cx="30" cy="52" rx="12" ry="3.5" fill="rgba(0,0,0,.28)" />
-      {/* body */}
-      <rect x="20" y="30" width="20" height="22" rx="7" fill={fit.body} />
-      {/* head */}
-      <circle cx="30" cy="24" r="9" fill={fit.skin} />
-      {/* hair (unless a cap/beanie covers it) */}
-      {!covers && (
-        <path d="M21 24 A9 9 0 0 1 39 24 L39 22 L21 22 Z" fill={fit.hair} />
-      )}
-      {/* eyes */}
-      <circle cx="27" cy="24" r="1.3" fill="#1a130d" />
-      <circle cx="33" cy="24" r="1.3" fill="#1a130d" />
-      {/* hat */}
-      {fit.hat === "cap" && (
-        <g fill={fit.body}>
-          <path d="M21 21 A9 9 0 0 1 39 21 L39 22 L21 22 Z" />
-          <rect x="38" y="21" width="9" height="3" rx="1.5" />
-        </g>
-      )}
-      {fit.hat === "beanie" && (
-        <g>
-          <path d="M20 22 A10 10 0 0 1 40 22 L40 24 L20 24 Z" fill="#7a4a3a" />
-          <rect x="20" y="22" width="20" height="3.5" fill="rgba(255,255,255,.2)" />
-        </g>
-      )}
-      {fit.hat === "flower" && (
-        <g>
-          {[0, 1, 2, 3, 4].map((i) => {
-            const a = (i / 5) * Math.PI * 2;
-            return (
-              <circle
-                key={i}
-                cx={39 + Math.cos(a) * 3}
-                cy={17 + Math.sin(a) * 3}
-                r="2.4"
-                fill="#e7708f"
-              />
-            );
-          })}
-          <circle cx="39" cy="17" r="2" fill="#ffd76a" />
-        </g>
-      )}
-      {fit.hat === "halo" && (
-        <ellipse
-          cx="30"
-          cy="13"
-          rx="9"
-          ry="3"
-          fill="none"
-          stroke="#ffe082"
-          strokeWidth="2.2"
-        />
-      )}
-      {fit.hat === "phones" && (
-        <g>
-          <path
-            d="M21 22 A9 9 0 0 1 39 22"
-            fill="none"
-            stroke="#23232a"
-            strokeWidth="2.4"
-          />
-          <rect x="18" y="22" width="4" height="7" rx="1.5" fill="#2c2c34" />
-          <rect x="38" y="22" width="4" height="7" rx="1.5" fill="#2c2c34" />
-        </g>
-      )}
-    </svg>
+    />
   );
 }
 
@@ -1457,7 +1405,7 @@ function FitPanel({
         </div>
 
         <div id="fitStage">
-          <AvatarPreview fit={fit} size={120} />
+          <AvatarPreview fit={fit} size={150} animate />
         </div>
 
         <div className="fitRow">

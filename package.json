@@ -13,12 +13,14 @@
     "next": "15.5.18",
     "react": "19.0.0",
     "react-dom": "19.0.0",
-    "server-only": "^0.0.1"
+    "server-only": "^0.0.1",
+    "three": "^0.170.0"
   },
   "devDependencies": {
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/three": "^0.170.0",
     "eslint": "^8.57.1",
     "eslint-config-next": "15.5.18",
     "puppeteer-core": "^23.11.1",

@@ -35,10 +35,20 @@ presence (NOT RoomState — that's audio). `setRoom()` re-tracks presence; `vroo
 the presence meta + `room` in the move broadcast; `RemotePlayer.room` filters which
 avatars draw (`engine.remoteEntities` filters by current room).
 
+## 3D scenery (Sep 2026 — the low-poly upgrade)
+Each scene has a builder in `lib/bar/three/rooms/<scene>.ts` that returns meshes +
+lighting + an `update()` for its animation. Fixture footprints come from
+`lib/bar/layout.ts`, the same constants the engine turns into solids — move a
+fixture there and both the collision and the mesh move. Doors (themed by
+destination) and crates are built for every room by `lib/bar/three/shared.ts`.
+
 ## Layout / camera notes (for editing fixtures)
-- Room is 1140×800, WALL=28. When the viewport ≥ room, the camera is fixed-centred,
-  so world→screen is a constant offset `(wx-570+W/2, wy-400+H/2)` — useful for
-  scripted/headless testing of door + shelf zones.
+- Room is 1140×800, WALL=28, x→right, y→toward the camera. Three.js maps world
+  (x, y) → (x, elevation, y). The camera follows the player from +Z, pitched 54°
+  down; the near (front) wall is kept low so it never hides the room.
+- Headless testing: `node scripts/shot.mjs <outDir> <roomId>[@x,y] …` (dev server
+  on :3100; uses the dev-only `window.__barEngine` hook to jump rooms / teleport).
+  Click-to-walk goes through `World3D.screenToWorld` (a floor raycast).
 - **Verify canvas layout changes by screenshot, not by reading source.** A silent
   find/replace miss once shipped a "moved" deck that hadn't moved. Headless Chrome
   via `puppeteer-core` at `/Applications/Google Chrome.app/...`, dismiss `#intro`,

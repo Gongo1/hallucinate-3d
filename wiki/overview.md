@@ -2,7 +2,7 @@
 
 **HALLUCINATE** is a walk-around Japanese listening bar (a *kissa*) — a playable,
 vibe-first front-end for discovering electronic music on YouTube & SoundCloud.
-You explore a top-down room (Canvas 2D), browse record shelves, and the bar plays
+You explore a stylized low-poly 3D room (three.js), browse record shelves, and the bar plays
 as one shared, synced stream everyone in the venue hears together.
 
 Lineage: a reimagining of `stagas/hallucinate` (a 3D "online rave"), kept the core
@@ -15,8 +15,9 @@ idea — *a spatial world with music at the center* — as a cozy audio-led reco
 
 ## Stack
 - **Next.js 15** (App Router, TypeScript strict), deployed on **Vercel** via CLI.
-- **Canvas renderer** in `lib/bar/*` (framework-agnostic; rAF loop, no React on the
-  hot path); React only for UI chrome.
+- **Engine + low-poly 3D view** in `lib/bar/*` (framework-agnostic; rAF loop, no
+  React on the hot path; three.js renders, the engine keeps the 2D floor-plan
+  logic); React only for UI chrome.
 - **Supabase** — Postgres (shelves/records) + **Realtime** (presence, chat, the
   shared room player, god-mode admin events). Shared with the Sombra restaurant
   site; hallucinate's tables are additive (`shelves`, `records`).

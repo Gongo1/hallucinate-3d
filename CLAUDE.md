@@ -89,4 +89,6 @@ Keep the prototype's field names where possible (`yt_id`, `sc_url`, `source`).
 ## Non-goals (for now)
 - Hosting/serving audio ourselves (we only orchestrate YouTube/SoundCloud players).
 - Ripping/downloading audio.
-- A full 3D engine like the original — the 2.5D canvas bar is the aesthetic.
+- Changed Sep 2026: the bar is now rendered in stylized low-poly 3D (three.js,
+  `lib/bar/three/`), per the owner's call. The engine still thinks in the 2D
+  floor plan; the 3D view only draws it.
