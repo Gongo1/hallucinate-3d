@@ -8,6 +8,7 @@ import {
   DIG_SPOTS, KISSA_FEATURED, type DigSpot,
 } from "./layout";
 import { World3D, type Actor, type ViewMode } from "./three/world";
+import { DANCE_MOVES, DANCE_SECONDS, type DanceMove } from "./three/character";
 import type { ActiveRef, PickRef } from "./three/types";
 import { REALMS, WANDER_CAT, secretsIn } from "./realms";
 
@@ -178,6 +179,9 @@ export class BarEngine {
   private pileRest: Record<string, number> = {};
   private secretsFound = new Set<string>();
   private talked = new Set<string>();
+  // the 💃 button: a one-shot move (walking cancels it)
+  private danceMove: { move: DanceMove; at: number } | null = null;
+  private lastMove: DanceMove | null = null;
   private stickVec = { x: 0, y: 0 };
   private stickId: number | null = null;
   private activeZone: Zone | null = null;
@@ -268,6 +272,18 @@ export class BarEngine {
   /** The room the local player is currently in (for filtering remote avatars). */
   currentRoom(): string {
     return this.room.id;
+  }
+
+  /** Dance! A random house move — a different one each time — for two bars,
+   *  then back to normal. Returns the move (the host broadcasts it). */
+  dance(): DanceMove | null {
+    if (!this.started || this.transitioning() || this.dig) return null;
+    const options = DANCE_MOVES.filter((m) => m !== this.lastMove);
+    const move = options[Math.floor(Math.random() * options.length)];
+    this.lastMove = move;
+    this.stopWalking();
+    this.danceMove = { move, at: performance.now() };
+    return move;
   }
 
   /** Camera: the close over-the-shoulder view (default) or the high overview.
@@ -1100,6 +1116,7 @@ export class BarEngine {
     }
     const kbMoving = ix || iy;
     if (kbMoving) this.stopWalking();
+    if (kbMoving || this.moveTarget) this.danceMove = null; // walking off ends the move
     if (this.moveTarget) {
       // steer at the next waypoint; the last one is the target itself
       let wp = this.waypoints[0] ?? this.moveTarget;
@@ -1424,7 +1441,7 @@ export class BarEngine {
   private render(dt: number) {
     const moving = this.playerMoving;
     const actors: Actor[] = [
-      { id: "player", x: this.player.x, y: this.player.y, fit: this.playerFit, moving, player: true, digging: !!this.dig },
+      { id: "player", x: this.player.x, y: this.player.y, fit: this.playerFit, moving, player: true, digging: !!this.dig, dance: this.danceNow() },
       ...this.npcs.map((n, i) => ({
         id: `npc:${this.room.id}:${i}`,
         x: n.x,
@@ -1481,6 +1498,17 @@ export class BarEngine {
     });
   }
 
+  /** The local dance move in progress, if any (ends itself after two bars). */
+  private danceNow(): { move: DanceMove; t: number } | undefined {
+    if (!this.danceMove) return undefined;
+    const t = (performance.now() - this.danceMove.at) / 1000;
+    if (t >= DANCE_SECONDS) {
+      this.danceMove = null;
+      return undefined;
+    }
+    return { move: this.danceMove.move, t };
+  }
+
   /** The active zone as a plain reference the view can highlight. */
   private activeRef(): ActiveRef | null {
     const z = this.activeZone;
@@ -1518,6 +1546,11 @@ export class BarEngine {
           y: r.y,
           fit: { skin: r.skin, body: r.color, hair: r.hair, hat: (r.hat as Hat) ?? "none", ...parseGear(r.gear) },
           moving: d > 0.8, // walk cycle only while closing distance
+          // someone else's 💃 — played from when their broadcast landed
+          dance:
+            r.dance && performance.now() - r.dance.at < DANCE_SECONDS * 1000
+              ? { move: r.dance.move as DanceMove, t: (performance.now() - r.dance.at) / 1000 }
+              : undefined,
         };
       });
   }

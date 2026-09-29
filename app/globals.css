@@ -3277,3 +3277,33 @@ select,
 .stashQ.rarity-3 {
   box-shadow: 0 0 10px rgba(255, 138, 214, 0.18);
 }
+
+/* ----- 💃 dance: in the reaction row on desktop, beside E on touch ----- */
+#danceBtn {
+  color: var(--amber, #ffb35e);
+  font-family: "Anton", sans-serif;
+  letter-spacing: 0.04em;
+  font-size: 13px;
+  white-space: nowrap;
+}
+#danceBtnTouch {
+  display: none;
+}
+.touch #danceBtnTouch {
+  display: grid;
+  place-items: center;
+  position: fixed;
+  right: calc(104px + env(safe-area-inset-right));
+  bottom: calc(40px + env(safe-area-inset-bottom));
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid rgba(255, 179, 94, 0.55);
+  font-size: 22px;
+  line-height: 1;
+  z-index: 35;
+  cursor: pointer;
+  touch-action: manipulation;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}

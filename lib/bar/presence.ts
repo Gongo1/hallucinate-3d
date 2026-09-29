@@ -200,6 +200,12 @@ export class BarPresence {
         const p = payload as { color: string; text: string };
         this.opts.onChat({ key: this.nextKey(), color: p.color, text: p.text });
       })
+      .on("broadcast", { event: "dance" }, ({ payload }) => {
+        // someone hit 💃 — their avatar plays the move here too (scenery only)
+        const p = payload as { id: string; move: string };
+        const r = this.byId.get(p.id);
+        if (r && typeof p.move === "string") r.dance = { move: p.move, at: performance.now() };
+      })
       .on("broadcast", { event: "react" }, ({ payload }) => {
         const p = payload as { color: string; emoji: string };
         this.opts.onReact({ key: this.nextKey(), color: p.color, emoji: p.emoji });
@@ -710,6 +716,11 @@ export class BarPresence {
       payload: { color: this.color, emoji },
     });
     this.opts.onReact({ key: this.nextKey(), color: this.color, emoji });
+  }
+
+  /** Tell the room your avatar is dancing (they play the same move). */
+  sendDance(move: string) {
+    void this.channel?.send({ type: "broadcast", event: "dance", payload: { id: this.id, move } });
   }
 
   /** The local listener moved to another venue room (scenery). Re-track presence

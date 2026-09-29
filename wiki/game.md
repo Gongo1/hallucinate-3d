@@ -44,6 +44,12 @@ HALLUCINATE plays like **Pokémon meets crate-digging**. Each room is a *realm* 
 
 **Existing players:** `grandfatherFit` makes their old hat theirs, so nobody gets undressed by the update. `clampFit` keeps a fit to owned gear.
 
+## 💃 Dance
+The **💃 dance** button (reaction row on desktop, round button beside E on touch) plays a random two-bar house move: Jack in the Box, Heel Toe, Shuffle, Criss Cross, Stomp, Loose Legs or The Skate (names from frague.at/house-move-list).
+- **Behaviour:** the move is never the same twice in a row. Walking ends it early; otherwise it eases back to normal after ~4s.
+- **How it's built:** it's procedural, like every other animation, so there are no animation files. See `dancePose()` in `three/character.ts`.
+- **Everyone sees it:** the move is broadcast as a `dance` presence event.
+
 ## Guardrails
 - Keep the placements valid:
   - Piles, keepers and hatches must sit on open floor, away from other zones, and be reachable by path from every spawn.

@@ -21,6 +21,134 @@ export const CHAR_SCALE = 1.5;
 
 export type Pose = "walk" | "idle" | "sit" | "dance";
 
+// DANCE MOVES — a one-shot, two-bar house move on the 💃 button. Procedural (no
+// animation files): each move is a pose function of time on the room's ~120bpm
+// beat. Names + feel from the house dance vocabulary (frague.at/house-move-list).
+export const DANCE_MOVES = ["jack", "heeltoe", "shuffle", "crisscross", "stomp", "looselegs", "skate"] as const;
+export type DanceMove = (typeof DANCE_MOVES)[number];
+export const DANCE_NAMES: Record<DanceMove, string> = {
+  jack: "Jack in the Box",
+  heeltoe: "Heel Toe",
+  shuffle: "Shuffle",
+  crisscross: "Criss Cross",
+  stomp: "Stomp",
+  looselegs: "Loose Legs",
+  skate: "The Skate",
+};
+/** a move lasts two bars at ~120bpm */
+export const DANCE_SECONDS = 4;
+
+interface DancePose {
+  lx: number; lz: number; ly: number; // left leg (forward/back, out/in, swivel)
+  rx: number; rz: number; ry: number; // right leg
+  alx: number; alz: number; // left arm (forward/back, out/in)
+  arx: number; arz: number; // right arm
+  bx: number; by: number; // body slide + bounce
+  brx: number; brz: number; bry: number; // body lean / tilt / twist
+  hx: number; hz: number; // head nod / tilt
+}
+
+function dancePose(move: DanceMove, t: number): DancePose {
+  const bt = t * 2; // beats (~120bpm, the same clock the room nods to)
+  const n = Math.floor(bt);
+  const b = bt - n;
+  const s = n % 2 ? 1 : -1; // alternating side each beat
+  const pulse = Math.sin(Math.PI * b); // 0 → 1 → 0 across each beat
+  const p: DancePose = { lx: 0, lz: 0, ly: 0, rx: 0, rz: 0, ry: 0, alx: -0.2, alz: -0.2, arx: -0.2, arz: 0.2, bx: 0, by: 0, brx: 0, brz: 0, bry: 0, hx: 0.15 * pulse, hz: 0 };
+  switch (move) {
+    case "jack": // the torso jacks forward on every beat, knees loose, head down
+      p.brx = 0.28 * pulse;
+      p.by = 1.4 * pulse;
+      p.hx = 0.28 * pulse;
+      p.lx = p.rx = -0.12 * pulse;
+      p.alx = p.arx = -0.5 - 0.35 * pulse;
+      p.alz = -0.35;
+      p.arz = 0.35;
+      break;
+    case "heeltoe": { // feet swivel heel-toe, travelling side to side, arms out
+      const side = Math.sin((Math.PI * bt) / 2);
+      p.ly = p.ry = 0.55 * side;
+      p.bx = 4 * side;
+      p.brz = -0.08 * side;
+      p.alz = -0.95 - 0.2 * pulse;
+      p.arz = 0.95 + 0.2 * pulse;
+      p.by = pulse;
+      p.hz = 0.1 * side;
+      break;
+    }
+    case "shuffle": // alternating kicks with a little hop, arms pumping
+      if (s > 0) {
+        p.lx = -0.9 * pulse;
+        p.rx = 0.25 * pulse;
+      } else {
+        p.rx = -0.9 * pulse;
+        p.lx = 0.25 * pulse;
+      }
+      p.by = 2.6 * pulse;
+      p.brx = 0.12;
+      p.alx = -0.4 + 0.7 * s * pulse;
+      p.arx = -0.4 - 0.7 * s * pulse;
+      break;
+    case "crisscross": { // legs cross + open on alternate beats, arms cross in front
+      const cr = 0.5 - 0.5 * Math.cos(Math.PI * bt);
+      p.lz = 0.35 * cr - 0.25 * (1 - cr);
+      p.rz = -p.lz;
+      p.alx = p.arx = -0.9;
+      p.alz = 0.6 * cr - 0.5 * (1 - cr);
+      p.arz = -p.alz;
+      p.by = 2 * pulse;
+      break;
+    }
+    case "stomp": { // lift high, slam down — arms come down with it
+      const lift = Math.pow(pulse, 0.6);
+      if (s > 0) {
+        p.lx = -1.1 * lift;
+        p.lz = -0.25 * lift;
+      } else {
+        p.rx = -1.1 * lift;
+        p.rz = 0.25 * lift;
+      }
+      p.alx = p.arx = 0.3 - 1.6 * lift;
+      p.brx = 0.25 * (1 - lift);
+      p.by = 2 * lift;
+      break;
+    }
+    case "looselegs": { // legs flick out sideways, body sways the other way, arms loose
+      if (s > 0) p.lz = -0.7 * pulse;
+      else p.rz = 0.7 * pulse;
+      p.brz = 0.12 * s * pulse;
+      p.bx = -2 * s * pulse;
+      const wave = Math.sin((Math.PI * bt) / 2);
+      p.alx = -0.6 + 0.5 * wave;
+      p.arx = -0.6 - 0.5 * wave;
+      p.alz = -0.5;
+      p.arz = 0.5;
+      p.by = 1.5 * pulse;
+      p.hz = -0.12 * s * pulse;
+      break;
+    }
+    case "skate": { // glide side to side, leaning in, trailing leg kicked back
+      const glide = Math.sin((Math.PI * bt) / 2);
+      p.bx = 7 * glide;
+      p.brz = -0.2 * glide;
+      p.bry = 0.35 * glide;
+      p.lx = 0.8 * Math.max(0, glide);
+      p.rx = 0.8 * Math.max(0, -glide);
+      p.alx = -0.8 * glide;
+      p.arx = 0.8 * glide;
+      p.alz = -0.3;
+      p.arz = 0.3;
+      p.by = 1.5 * Math.abs(glide);
+      break;
+    }
+  }
+  // a touch bigger than life, so moves read from the camera's distance
+  for (const k of ["lx", "lz", "ly", "rx", "rz", "ry", "alx", "alz", "arx", "arz", "brx", "brz", "bry"] as const) p[k] *= 1.2;
+  p.by *= 1.4;
+  p.bx *= 1.25;
+  return p;
+}
+
 export interface CharState {
   /** moving this frame (drives the walk cycle) */
   moving: boolean;
@@ -37,6 +165,8 @@ export interface CharState {
   digging?: boolean;
   /** one arm up, waving hello */
   waving?: boolean;
+  /** a one-shot dance move in progress (t = seconds since it started) */
+  dance?: { move: DanceMove; t: number };
 }
 
 export class Character {
@@ -521,6 +651,41 @@ export class Character {
     this.head.rotation.x = nod;
     this.head.rotation.z = Math.sin(t * 0.9 + this.seed) * 0.05 * idle;
 
+    // ---- a dance move (the 💃 button) layers over everything above, easing in
+    // at the start and back out to normal at the end; walking cancels it
+    const d = s.dance && !s.moving && !s.sitting && d0(s.dance.t) ? s.dance : null;
+    const ease = Math.min(1, dt * 10);
+    if (d) {
+      const w = Math.max(0, Math.min(1, d.t / 0.25, (DANCE_SECONDS - d.t) / 0.35));
+      const p = dancePose(d.move, d.t);
+      const mix = (a: number, v: number) => a + (v - a) * w;
+      this.legL.rotation.x = mix(this.legL.rotation.x, p.lx);
+      this.legR.rotation.x = mix(this.legR.rotation.x, p.rx);
+      this.legL.rotation.z = p.lz * w;
+      this.legR.rotation.z = p.rz * w;
+      this.legL.rotation.y = p.ly * w;
+      this.legR.rotation.y = p.ry * w;
+      this.armL.rotation.x = mix(this.armL.rotation.x, p.alx);
+      this.armR.rotation.x = mix(this.armR.rotation.x, p.arx);
+      this.armL.rotation.z = mix(this.armL.rotation.z, p.alz);
+      this.armR.rotation.z = mix(this.armR.rotation.z, p.arz);
+      this.body.position.x = p.bx * w;
+      this.body.position.y += p.by * w;
+      this.body.rotation.x = mix(this.body.rotation.x, p.brx);
+      this.body.rotation.z = mix(this.body.rotation.z, p.brz);
+      this.body.rotation.y = p.bry * w;
+      this.head.rotation.x = mix(this.head.rotation.x, p.hx);
+      this.head.rotation.z = mix(this.head.rotation.z, p.hz);
+    } else {
+      // settle anything only a dance moves back to rest
+      for (const o of [this.legL.rotation, this.legR.rotation]) {
+        o.z -= o.z * ease;
+        o.y -= o.y * ease;
+      }
+      this.body.position.x -= this.body.position.x * ease;
+      this.body.rotation.y -= this.body.rotation.y * ease;
+    }
+
     // ---- extras
     if (this.halo) {
       const pulse = 0.6 + 0.4 * Math.sin(t * 2);
@@ -572,6 +737,11 @@ function sunMoonTexture(color = "#ffb35e"): THREE.Texture {
   t.userData.cached = true;
   sunMoonTex.set(color, t);
   return t;
+}
+
+/** is a dance that started `t` seconds ago still going? */
+function d0(t: number): boolean {
+  return t >= 0 && t < DANCE_SECONDS;
 }
 
 /** yaw (radians around +Y) that faces a plan-space direction (dx right, dy down) */

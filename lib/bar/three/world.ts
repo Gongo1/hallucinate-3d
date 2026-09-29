@@ -3,7 +3,7 @@ import type { RoomDef } from "../rooms";
 import { CURATORS } from "../curators";
 import type { Fit } from "../fits";
 import { ROOM, crateStyleFor } from "../layout";
-import { Character, yawOf, type CharState } from "./character";
+import { Character, yawOf, type CharState, type DanceMove } from "./character";
 import { buildCrate, buildDoor, type CrateObj, type CrateView, type DoorView } from "./shared";
 import { buildGameLayer, type GameLayer } from "./game";
 import { disposeTree, hex } from "./kit";
@@ -31,6 +31,8 @@ export interface Actor {
   pick?: PickRef;
   /** mid-dig: crouched, arms working the pile */
   digging?: boolean;
+  /** a dance move in progress (t = seconds since it started) */
+  dance?: { move: DanceMove; t: number };
 }
 
 export interface FrameState {
@@ -534,6 +536,7 @@ export class World3D {
         digging: a.digging,
         // keepers you haven't met wave you over
         waving: near && !s.game.talked,
+        dance: a.dance,
       };
       e.c.update(s.t, s.dt, st);
     }

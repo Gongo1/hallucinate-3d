@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { BarEngine } from "@/lib/bar/engine";
+import { DANCE_NAMES } from "@/lib/bar/three/character";
 import { BarPlayer, type PlayerState } from "@/lib/bar/player";
 import {
   BarPresence,
@@ -799,6 +800,13 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
   const sendReact = useCallback((emoji: string) => {
     presenceRef.current?.sendReact(emoji);
   }, []);
+  // 💃 — a random house move (a new one each press); everyone in the room sees it
+  const dance = useCallback(() => {
+    const move = engineRef.current?.dance();
+    if (!move) return;
+    presenceRef.current?.sendDance(move);
+    gameRef.current.toast(`💃 ${DANCE_NAMES[move]}`);
+  }, []);
   const setTyping = useCallback((v: boolean) => {
     typingRef.current = v;
   }, []);
@@ -1139,6 +1147,7 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           onToggle={() => setChatOpen((o) => !o)}
           onSend={sendChat}
           onReact={sendReact}
+          onDance={dance}
           onTyping={setTyping}
         />
       )}
@@ -1157,6 +1166,12 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
       <div ref={actBtnRef} id="actBtn">
         E
       </div>
+      {/* touch: dance sits beside E (desktop has it in the reaction row) */}
+      {started && (
+        <button id="danceBtnTouch" onClick={dance} aria-label="dance">
+          💃
+        </button>
+      )}
 
       {/* onClick, NOT pointerdown: on touch only click carries the user
           activation that lets the in-gesture playStation make sound */}
@@ -1951,6 +1966,7 @@ function Lobby({
   onToggle,
   onSend,
   onReact,
+  onDance,
   onTyping,
 }: {
   chat: ChatMessage[];
@@ -1961,6 +1977,7 @@ function Lobby({
   onToggle: () => void;
   onSend: (text: string) => void;
   onReact: (emoji: string) => void;
+  onDance: () => void;
   onTyping: (v: boolean) => void;
 }) {
   const [text, setText] = useState("");
@@ -2001,6 +2018,9 @@ function Lobby({
           ))}
         </div>
         <div id="reactRow">
+          <button id="danceBtn" className="reactBtn" onClick={onDance} title="dance — a random house move">
+            💃 dance
+          </button>
           {REACTIONS.map((e) => (
             <button
               key={e}

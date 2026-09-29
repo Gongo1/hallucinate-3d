@@ -57,6 +57,8 @@ export interface RemotePlayer {
   hat: string;
   /** gifted gear code "top.neck.eyes.back" (older clients omit it → basic) */
   gear?: string;
+  /** their latest 💃 move + when it arrived (performance.now ms) */
+  dance?: { move: string; at: number };
   /** which venue room this listener is currently in (for per-room avatar render) */
   room: string;
 }
