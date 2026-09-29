@@ -114,6 +114,9 @@ interface EngineOpts {
   callbacks: EngineCallbacks;
 }
 
+/** the saved camera choice (v2: the old key could hold an accidental switch made
+ *  by typing a link — everyone starts back in the close view once) */
+const VIEW_KEY = "hallucinate-view-v2";
 /** rave-portal pull-through charge length (ms) — explicit, cancelable intent */
 const PORTAL_CHARGE_MS = 800;
 /** how long a dig takes (s) and how long a pile rests before it can be dug again (ms) */
@@ -218,7 +221,7 @@ export class BarEngine {
     this.buildStatics();
     this.view.setRoom(this.room);
     try {
-      if (localStorage.getItem("hallucinate-view") === "overview") this.view.setView("overview");
+      if (localStorage.getItem(VIEW_KEY) === "overview") this.view.setView("overview");
     } catch {}
     this.setShelves(opts.shelves);
     this.npcs = this.roomNpcs(this.room.id);
@@ -292,7 +295,7 @@ export class BarEngine {
     const next: ViewMode = this.view.view === "close" ? "overview" : "close";
     this.view.setView(next);
     try {
-      localStorage.setItem("hallucinate-view", next);
+      localStorage.setItem(VIEW_KEY, next);
     } catch {}
     return next;
   }
@@ -721,6 +724,21 @@ export class BarEngine {
 
     this.onKeyDown = (e) => {
       if (this.cb.isTyping()) return; // let the chat input own the keyboard
+      // …and any other text field (the 新着 paste box, shelf names): typing a
+      // link must never fire hotkeys — "watch?v=" used to flip the camera
+      const el = e.target as HTMLElement | null;
+      const field = el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName));
+      if (field) {
+        // a field inside a closed (hidden) panel can keep focus — let it go, so
+        // the keyboard comes straight back to the game
+        const visible = el.getClientRects().length > 0 && getComputedStyle(el).visibility !== "hidden";
+        if (!visible) el.blur();
+        else if (e.key === "Escape") {
+          el.blur(); // Esc still closes the panel you're typing in
+          this.cb.onCloseOverlays();
+          return;
+        } else return;
+      }
       if (
         ["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", " "].includes(e.key)
       )
