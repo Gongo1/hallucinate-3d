@@ -14,10 +14,14 @@ export interface Track {
   id?: string;
   /** known length in seconds, or null/undefined if unresolved (backstop covers it) */
   durationSeconds?: number | null;
+  /** a full DJ set from a FULL_SET_CRATES crate — exempt from the 15-min backstop */
+  fullSet?: boolean;
 }
 
 export interface Shelf {
   id: string;
+  /** DB slug (stable handle for special crates: featured / curated / full sets) */
+  slug?: string;
   label: string;
   color: string;
   records: Track[];

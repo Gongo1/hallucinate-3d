@@ -51,8 +51,14 @@ export interface FrameState {
   game: GameFrame;
 }
 
-const FOV = 36;
-const PITCH = (54 * Math.PI) / 180; // camera looks down this far below horizontal
+// Two camera views. CLOSE (default): low over your shoulder, looking ahead into
+// the room — you see what's in front of you. OVERVIEW: the high diorama view.
+export type ViewMode = "close" | "overview";
+const VIEWS: Record<ViewMode, { fov: number; pitch: number; visH: number; visW: number; ahead: number; min: number; max: number }> = {
+  // visH/visW: world px the view spans at the player (height / min width)
+  close: { fov: 46, pitch: (27 * Math.PI) / 180, visH: 400, visW: 330, ahead: 110, min: 380, max: 1250 },
+  overview: { fov: 36, pitch: (54 * Math.PI) / 180, visH: 0, visW: 0, ahead: 0, min: 560, max: 1500 },
+};
 
 const POST_VERT = /* glsl */ `
 varying vec2 vUv;
@@ -91,7 +97,15 @@ void main() {
 export class World3D {
   private renderer: THREE.WebGLRenderer;
   private scene = new THREE.Scene();
-  readonly camera = new THREE.PerspectiveCamera(FOV, 1, 10, 6000);
+  readonly camera = new THREE.PerspectiveCamera(VIEWS.close.fov, 1, 10, 6000);
+  private viewMode: ViewMode = "close";
+  // scenery between the camera and you fades out of the way (mesh → its own material)
+  private faded = new Map<THREE.Mesh, THREE.Material>();
+  private fadeTick = 0;
+  // camera-facing labels (placards, tags, bubbles) — the ones between the camera
+  // and you get tucked away in the close view so they never fill the screen
+  private labels: THREE.Sprite[] = [];
+  private hiddenLabels: THREE.Sprite[] = [];
   private hemi = new THREE.HemisphereLight(0xffffff, 0x222222, 1);
   private key = new THREE.DirectionalLight(0xffffff, 1);
   private post = new THREE.Scene();
@@ -190,6 +204,7 @@ export class World3D {
 
   /** Build a room's scenery + doors (crates arrive via setCrates). */
   setRoom(room: RoomDef) {
+    this.clearFades();
     if (this.roomGroup) {
       this.scene.remove(this.roomGroup);
       disposeTree(this.roomGroup);
@@ -254,11 +269,41 @@ export class World3D {
    *  doors, crates, and the game layer. Characters are tagged per frame. */
   private collectPickables() {
     const list: THREE.Object3D[] = [];
-    this.roomGroup?.traverse((o) => {
+    const labels: THREE.Sprite[] = [];
+    const scan = (o: THREE.Object3D) => {
       if (o.userData.pick) list.push(o);
-    });
-    for (const c of this.crates) list.push(c.group);
+      if ((o as THREE.Sprite).isSprite && o.userData.label) labels.push(o as THREE.Sprite);
+    };
+    this.roomGroup?.traverse(scan);
+    for (const c of this.crates) {
+      list.push(c.group);
+      c.group.traverse((o) => {
+        if ((o as THREE.Sprite).isSprite && o.userData.label) labels.push(o as THREE.Sprite);
+      });
+    }
     this.pickables = list;
+    this.labels = labels;
+    this.hiddenLabels = [];
+  }
+
+  /** Close view: hide labels that sit between the camera and you. */
+  private tuckForegroundLabels(p: { x: number; y: number }) {
+    for (const l of this.hiddenLabels) l.visible = true;
+    this.hiddenLabels = [];
+    if (this.viewMode !== "close") return;
+    const fwd = new THREE.Vector3();
+    this.camera.getWorldDirection(fwd);
+    const cam = this.camera.position;
+    const playerDepth = new THREE.Vector3(p.x, 40, p.y).sub(cam).dot(fwd);
+    const w = new THREE.Vector3();
+    for (const l of this.labels) {
+      if (!l.visible) continue;
+      l.getWorldPosition(w);
+      if (w.sub(cam).dot(fwd) < playerDepth - 70) {
+        l.visible = false;
+        this.hiddenLabels.push(l);
+      }
+    }
   }
 
   /** The clickable thing under a screen point (nearest tagged hit), if any. */
@@ -289,20 +334,39 @@ export class World3D {
     return { x: hit.x, y: hit.z };
   }
 
+  /** Switch the camera between the close over-the-shoulder view and the overview. */
+  setView(mode: ViewMode) {
+    this.viewMode = mode;
+    this.resize();
+    this.snapCam = true;
+    if (mode === "overview") this.clearFades();
+  }
+  get view(): ViewMode {
+    return this.viewMode;
+  }
+
   resize() {
     this.W = this.canvas.clientWidth || 1;
     this.H = this.canvas.clientHeight || 1;
     this.renderer.setSize(this.W, this.H, false);
     this.camera.aspect = this.W / this.H;
-    // frame roughly the 2D view's scale (≈1 world px per css px at the player),
-    // a little wider on small screens so phones see more of the room
-    const small = Math.min(this.W, this.H) < 560;
-    const visH = this.H * (small ? 1.2 : 0.8);
-    const visW = this.W * (small ? 1.2 : 0.8);
-    const t = Math.tan((FOV * Math.PI) / 360);
+    const v = VIEWS[this.viewMode];
+    this.camera.fov = v.fov;
+    const t = Math.tan((v.fov * Math.PI) / 360);
+    let visH: number, visW: number;
+    if (this.viewMode === "close") {
+      visH = v.visH;
+      visW = v.visW;
+    } else {
+      // frame roughly the old 2D view's scale (≈1 world px per css px), a little
+      // wider on small screens so phones see more of the room
+      const small = Math.min(this.W, this.H) < 560;
+      visH = this.H * (small ? 1.2 : 0.8);
+      visW = this.W * (small ? 1.2 : 0.8);
+    }
     const byH = visH / (2 * t);
     const byW = visW / (2 * t * this.camera.aspect);
-    this.camDist = Math.min(Math.max(byH, byW, 560), 1500);
+    this.camDist = Math.min(Math.max(byH, byW, v.min), v.max);
     this.camera.updateProjectionMatrix();
     this.finish.uniforms.uRes.value.set(this.W, this.H);
   }
@@ -325,6 +389,9 @@ export class World3D {
       camera: this.camera,
       hover: s.game.hover,
     };
+    // labels tucked last frame come back before the room logic decides visibility
+    for (const l of this.hiddenLabels) l.visible = true;
+    this.hiddenLabels = [];
     this.roomView?.update?.(info);
     this.game?.update(info, s.game);
     for (const d of this.doors) d.update(info);
@@ -341,6 +408,7 @@ export class World3D {
     this.finish.uniforms.uCharge.value = s.portalCharge;
     this.finish.uniforms.uFade.value = s.fade;
 
+    this.tuckForegroundLabels(info.player);
     this.renderer.clear();
     this.renderer.render(this.scene, this.camera);
     this.renderer.render(this.post, this.postCam);
@@ -353,24 +421,82 @@ export class World3D {
 
   private followCamera(s: FrameState) {
     const p = this.playerPos(s);
-    // keep the view inside the room: centre it on an axis the screen already covers
-    const t = Math.tan((FOV * Math.PI) / 360);
+    const v = VIEWS[this.viewMode];
+    const t = Math.tan((v.fov * Math.PI) / 360);
     const halfW = this.camDist * t * this.camera.aspect * 0.92;
-    const halfD = (this.camDist * t) / Math.sin(PITCH) * 0.7;
-    const clampAxis = (v: number, half: number, lo: number, hi: number) =>
-      hi - lo <= half * 2 ? (lo + hi) / 2 : Math.min(Math.max(v, lo + half), hi - half);
-    const tx = clampAxis(p.x, halfW, -40, ROOM.w + 40);
-    const tz = clampAxis(p.y, halfD, -10, ROOM.h + 30);
-    const k = this.snapCam ? 1 : Math.min(1, s.dt * 5);
+    const clampAxis = (x: number, half: number, lo: number, hi: number) =>
+      hi - lo <= half * 2 ? (lo + hi) / 2 : Math.min(Math.max(x, lo + half), hi - half);
+    let tx: number, tz: number;
+    if (this.viewMode === "close") {
+      // follow you closely, looking a little ahead (into the room); only keep the
+      // view from sliding far past the side walls
+      tx = clampAxis(p.x, halfW * 0.55, -20, ROOM.w + 20);
+      tz = Math.min(Math.max(p.y - v.ahead, 40), ROOM.h - 60);
+    } else {
+      // keep the view inside the room: centre it on an axis the screen already covers
+      const halfD = (this.camDist * t) / Math.sin(v.pitch) * 0.7;
+      tx = clampAxis(p.x, halfW, -40, ROOM.w + 40);
+      tz = clampAxis(p.y, halfD, -10, ROOM.h + 30);
+    }
+    const k = this.snapCam ? 1 : Math.min(1, s.dt * (this.viewMode === "close" ? 6 : 5));
     this.snapCam = false;
     this.target.x += (tx - this.target.x) * k;
     this.target.z += (tz - this.target.z) * k;
     this.camera.position.set(
       this.target.x,
-      this.target.y + Math.sin(PITCH) * this.camDist,
-      this.target.z + Math.cos(PITCH) * this.camDist
+      this.target.y + Math.sin(v.pitch) * this.camDist,
+      this.target.z + Math.cos(v.pitch) * this.camDist
     );
-    this.camera.lookAt(this.target.x, 18, this.target.z);
+    this.camera.lookAt(this.target.x, this.viewMode === "close" ? 30 : 18, this.target.z);
+    if (this.viewMode === "close" && ++this.fadeTick % 3 === 0) this.fadeOccluders(p);
+  }
+
+  /** Fade scenery that stands between the camera and you (pillars, hedges,
+   *  speakers, walls) so you never lose your character in the close view. */
+  private fadeOccluders(p: { x: number; y: number }) {
+    const hits = new Set<THREE.Mesh>();
+    const from = this.camera.position;
+    const roots: THREE.Object3D[] = [this.crateGroup];
+    if (this.roomGroup) roots.push(this.roomGroup);
+    for (const h of [18, 46, 74]) {
+      const dir = new THREE.Vector3(p.x, h, p.y).sub(from);
+      const dist = dir.length();
+      this.ray.set(from, dir.normalize());
+      this.ray.camera = this.camera; // sprites (labels) need it to be raycastable
+      this.ray.far = dist - 16;
+      for (const hit of this.ray.intersectObjects(roots, true)) {
+        const m = hit.object as THREE.Mesh;
+        if (!m.isMesh || Array.isArray(m.material)) continue;
+        const mat = this.faded.get(m) ?? m.material;
+        if (!(mat instanceof THREE.MeshLambertMaterial) || mat.transparent || !mat.visible) continue;
+        hits.add(m);
+      }
+    }
+    this.ray.far = Infinity;
+    for (const m of hits) {
+      if (this.faded.has(m)) continue;
+      const orig = m.material as THREE.MeshLambertMaterial;
+      const ghost = orig.clone();
+      ghost.transparent = true;
+      ghost.opacity = 0.28;
+      ghost.depthWrite = false;
+      this.faded.set(m, orig);
+      m.material = ghost;
+    }
+    for (const [m, orig] of this.faded) {
+      if (hits.has(m)) continue;
+      (m.material as THREE.Material).dispose();
+      m.material = orig;
+      this.faded.delete(m);
+    }
+  }
+
+  private clearFades() {
+    for (const [m, orig] of this.faded) {
+      (m.material as THREE.Material).dispose();
+      m.material = orig;
+    }
+    this.faded.clear();
   }
 
   /** Create / update / retire a Character per actor, facing where they walk. */

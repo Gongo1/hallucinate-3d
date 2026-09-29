@@ -517,10 +517,12 @@ export class BarPresence {
   /**
    * Duration backstop (host): the player learned the now-playing track is at or
    * over the 15-min library cap (stale row or unresolved SoundCloud). Skip it for
-   * the whole room immediately — bypasses votes + cooldown.
+   * the whole room immediately — bypasses votes + cooldown. Full DJ sets from a
+   * FULL_SET_CRATES crate (someone cued them on purpose) are allowed to run.
    */
   durationKnown(seconds: number) {
     if (!this.isHost() || !this.room) return;
+    if (this.room.now?.fullSet) return;
     if (seconds >= MAX_TRACK_SECONDS) this.advance(false); // backstop, no cooldown
   }
 

@@ -472,7 +472,7 @@ export function buildCrate(o: CrateObj, st: CrateStyle): CrateView {
 
   // the genre tag — a camera-facing placard on the open (browse) side
   const labelLeft = o.labelSide === "left";
-  const tag = billboard(96, 30, (c, w, h) => {
+  const tag = billboard(108, 30, (c, w, h) => {
     c.fillStyle = "rgba(14,11,8,.78)";
     rr(c, 1, 1, w - 2, h - 2, 5);
     c.fill();
@@ -481,12 +481,12 @@ export function buildCrate(o: CrateObj, st: CrateStyle): CrateView {
     c.textAlign = "left";
     c.textBaseline = "middle";
     c.font = "700 10px 'DM Mono'";
-    c.fillText(d.label.replace(/·.*/, "").trim().slice(0, 14), 11, 11);
+    c.fillText(d.label.replace(/·.*/, "").trim().slice(0, 17), 11, 11);
     c.fillStyle = "rgba(241,230,210,.55)";
     c.font = "8.5px 'DM Mono'";
     c.fillText(`${d.records.length} records`, 11, 22);
-  }, 84);
-  tag.position.set(labelLeft ? x0 - 50 : x0 + o.w + 50, 40, o.y);
+  }, 94);
+  tag.position.set(labelLeft ? x0 - 54 : x0 + o.w + 54, 40, o.y);
   g.add(tag);
 
   // active highlight: glowing edges + a pool of the crate colour

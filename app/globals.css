@@ -651,17 +651,6 @@ canvas {
   margin-top: 13px;
   letter-spacing: 0.18em;
 }
-#playShelf {
-  margin-top: 14px;
-  font-size: 11px;
-  color: var(--moss);
-  filter: brightness(1.3);
-  background: none;
-  border: 0;
-  cursor: pointer;
-  letter-spacing: 0.06em;
-}
-
 /* ingest panel */
 #ingestBox {
   width: min(560px, 93vw);

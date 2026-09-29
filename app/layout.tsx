@@ -7,22 +7,22 @@ const SITE_URL = "https://hallucinate.sombraproject.com";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
-  title: "HALLUCINATE · 音楽喫茶 — a listening bar",
+  title: "HALLUCINATE · the Sombra Listening Room",
   description:
-    "Sombra presents a walk-around Japanese listening bar — a playable front-end for discovering electronic music on YouTube & SoundCloud.",
+    "The Sombra Listening Room — a walk-around, low-poly listening bar where you dig for house records, meet the keepers, and hear the same track as everyone in the room.",
   alternates: { canonical: SITE_URL },
   openGraph: {
-    title: "HALLUCINATE · 音楽喫茶 — a listening bar",
+    title: "HALLUCINATE · the Sombra Listening Room",
     description:
-      "Sombra presents a walk-around Japanese listening bar — step through the ☉☽ and into the room.",
+      "The Sombra Listening Room — dig for records, meet the keepers, step through the ☉☽.",
     url: SITE_URL,
     siteName: "HALLUCINATE",
     type: "website",
   },
   twitter: {
     card: "summary_large_image",
-    title: "HALLUCINATE · 音楽喫茶 — a listening bar",
-    description: "Sombra presents a walk-around Japanese listening bar.",
+    title: "HALLUCINATE · the Sombra Listening Room",
+    description: "The Sombra Listening Room — dig for records in a low-poly listening bar.",
   },
 };
 

@@ -1,6 +1,7 @@
 import "server-only";
 import { getServerClient } from "@/lib/supabase/server";
 import type { Shelf, Track } from "./types";
+import { FULL_SET_CRATES } from "./flow";
 
 // DB → runtime mapping. The DB keeps the Supabase-normalized field names
 // (yt_id / sc_url / is_ingest); the renderer wants the prototype's camelCase
@@ -17,6 +18,7 @@ interface RecordRow {
 }
 interface ShelfRow {
   id: string;
+  slug: string | null;
   label: string;
   color: string;
   is_ingest: boolean;
@@ -43,7 +45,7 @@ export async function loadShelves(): Promise<Shelf[]> {
   const { data, error } = await sb
     .from("shelves")
     .select(
-      "id, label, color, is_ingest, sort, room, energy, records ( id, title, artist, yt_id, sc_url, sort, duration_seconds )"
+      "id, slug, label, color, is_ingest, sort, room, energy, records ( id, title, artist, yt_id, sc_url, sort, duration_seconds )"
     )
     .order("is_ingest", { ascending: true })
     .order("sort", { ascending: true });
@@ -51,6 +53,7 @@ export async function loadShelves(): Promise<Shelf[]> {
 
   return ((data ?? []) as unknown as ShelfRow[]).map((s) => ({
     id: s.id,
+    slug: s.slug ?? undefined,
     label: s.label,
     color: s.color,
     ingest: s.is_ingest || undefined,
@@ -59,6 +62,6 @@ export async function loadShelves(): Promise<Shelf[]> {
     records: (s.records ?? [])
       .slice()
       .sort((a, b) => a.sort - b.sort)
-      .map(toTrack),
+      .map((r) => (s.slug && FULL_SET_CRATES.has(s.slug) ? { ...toTrack(r), fullSet: true } : toTrack(r))),
   }));
 }

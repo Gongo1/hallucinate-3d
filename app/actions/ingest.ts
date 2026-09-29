@@ -1,11 +1,14 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { cookies } from "next/headers";
+import { BOOTH_COOKIE, verifyToken } from "@/lib/booth/auth";
+import { CURATED_CRATES } from "@/lib/bar/layout";
 import { getServerClient } from "@/lib/supabase/server";
 import { enrichTracks } from "@/lib/bar/enrich";
 import { parseLinks } from "@/lib/bar/ingest";
 import { resolveDuration } from "@/lib/bar/duration";
-import { MAX_TRACK_SECONDS } from "@/lib/bar/flow";
+import { FULL_SET_CRATES, MAX_TRACK_SECONDS } from "@/lib/bar/flow";
 import type { Track } from "@/lib/bar/types";
 
 function fmt(sec: number): string {
@@ -58,6 +61,28 @@ export async function ingestLinks(input: {
   if (!parsed.length)
     return { ok: false, message: "No YouTube/SoundCloud links found." };
 
+  // Curated crates (the Listening Room's featured Gongo + Sombra Selection) take
+  // records from the owner only — a verified /booth session.
+  let targetSlug: string | null = null;
+  if (input.target.kind === "existing") {
+    const { data: t } = await getServerClient()
+      .from("shelves")
+      .select("slug")
+      .eq("id", input.target.shelfId)
+      .single();
+    targetSlug = (t?.slug as string | null | undefined) ?? null;
+    if (targetSlug && CURATED_CRATES.has(targetSlug)) {
+      const jar = await cookies();
+      if (!verifyToken(jar.get(BOOTH_COOKIE)?.value))
+        return {
+          ok: false,
+          message: "That crate is curated by Sombra — drop your links in 新着 or start your own shelf.",
+        };
+    }
+  }
+  // the one cap exception: full DJ sets filed into a FULL_SET_CRATES crate
+  const fullSets = !!targetSlug && FULL_SET_CRATES.has(targetSlug);
+
   const enriched = await enrichTracks(parsed);
 
   // Library rule (fixed, not room-relative): resolve each link's length and
@@ -67,7 +92,7 @@ export async function ingestLinks(input: {
   const rejected: { title: string; reason: string }[] = [];
   enriched.forEach((t, i) => {
     const d = durations[i];
-    if (d != null && d >= MAX_TRACK_SECONDS) {
+    if (d != null && d >= MAX_TRACK_SECONDS && !fullSets) {
       rejected.push({
         title: t.title,
         reason: `${fmt(d)} — over the ${MAX_TRACK_SECONDS / 60}-min limit`,

@@ -5,9 +5,9 @@ import { SKINS, HATS, NECKS, EYES, parseGear, type Fit, type Hat, type Neck, typ
 import {
   ROOM, WALL, KISSA, KISSA_SEATED, KISSA_MASTER, GARDEN, OMAKASE, BERLIN, TEA, CURATOR,
   PLAYA, WAREHOUSE, ROOFTOP, TRATTORIA, ARCHIVE, LAB_GRID, LAB_COLS, LAB_ROWS, LAB_CW, LAB_CH,
-  DIG_SPOTS, type DigSpot,
+  DIG_SPOTS, KISSA_FEATURED, type DigSpot,
 } from "./layout";
-import { World3D, type Actor } from "./three/world";
+import { World3D, type Actor, type ViewMode } from "./three/world";
 import type { ActiveRef, PickRef } from "./three/types";
 import { REALMS, WANDER_CAT, secretsIn } from "./realms";
 
@@ -213,6 +213,9 @@ export class BarEngine {
 
     this.buildStatics();
     this.view.setRoom(this.room);
+    try {
+      if (localStorage.getItem("hallucinate-view") === "overview") this.view.setView("overview");
+    } catch {}
     this.setShelves(opts.shelves);
     this.npcs = this.roomNpcs(this.room.id);
 
@@ -265,6 +268,17 @@ export class BarEngine {
   /** The room the local player is currently in (for filtering remote avatars). */
   currentRoom(): string {
     return this.room.id;
+  }
+
+  /** Camera: the close over-the-shoulder view (default) or the high overview.
+   *  Remembered on this device. */
+  toggleView(): ViewMode {
+    const next: ViewMode = this.view.view === "close" ? "overview" : "close";
+    this.view.setView(next);
+    try {
+      localStorage.setItem("hallucinate-view", next);
+    } catch {}
+    return next;
   }
 
   /** Fade-travel to a realm (the map's fast travel). Scenery only. */
@@ -361,11 +375,23 @@ export class BarEngine {
     const spots = DIG_SPOTS[this.room.scene];
     if (spots) return this.placeDigSpots(here, spots);
 
-    // DETROIT gets a special home on the RIGHT wall, just above the pour-over bar
-    // (per request). Everything else forms the left-wall column.
+    // The featured crates (Gongo, Sombra Selection) sit front and centre under the
+    // big sign. DETROIT gets a special home on the RIGHT wall, just above the
+    // pour-over bar (per request). Everything else forms the left-wall column.
+    const featured = here.filter((s) => s.slug && KISSA_FEATURED[s.slug]);
+    for (const data of featured) {
+      const sp = KISSA_FEATURED[data.slug!];
+      const o: ShelfObj = { data, x: sp.x, y: sp.y, w: 100, h: 54, labelSide: sp.label };
+      const r = this.solid(o.x - o.w / 2, o.y - o.h / 2, o.w, o.h);
+      r._shelf = true;
+      this.shelfObjs.push(o);
+      const zx = sp.label === "left" ? o.x - o.w / 2 - 30 : o.x + o.w / 2 + 30;
+      this.zones.push({ type: "shelf", cx: zx, cy: o.y, r: 58, shelf: o });
+    }
     const isRight = (s: Shelf) => /DETROIT/i.test(s.label);
-    const left = here.filter((s) => !isRight(s));
-    const right = here.filter(isRight);
+    const rest = here.filter((s) => !featured.includes(s));
+    const left = rest.filter((s) => !isRight(s));
+    const right = rest.filter(isRight);
 
     // ----- left column (the main library) -----
     const top = WALL + 18;
@@ -684,6 +710,7 @@ export class BarEngine {
       const k = e.key.toLowerCase();
       this.keys[k] = true;
       if (k === "e") this.tryInteract();
+      if (k === "v") this.toggleView();
       if (k === "escape") this.cb.onCloseOverlays();
       if (this.cb.isOverlayOpen()) return;
       if (k === " ") this.cb.onTogglePlay();

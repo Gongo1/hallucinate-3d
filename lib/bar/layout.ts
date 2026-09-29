@@ -52,6 +52,15 @@ export const KISSA = {
     { t: "stone", x: 170, y: ROOM.h - 110 },
   ] as { t: "bamboo" | "maple" | "stone"; x: number; y: number }[],
 };
+/** Featured crates in the Listening Room, front and centre under the big sign
+ *  (by shelf slug). Owner-curated — see CURATED_CRATES. */
+export const KISSA_FEATURED: Record<string, DigSpot> = {
+  gongo: { x: 470, y: 190, label: "left" },
+  "sombra-selection": { x: 690, y: 190, label: "right" },
+};
+/** crates only the owner (a /booth session) can add records to */
+export const CURATED_CRATES: ReadonlySet<string> = new Set(["gongo", "sombra-selection"]);
+
 /** the seated pair on the tatami + the kissa master behind the bar */
 export const KISSA_SEATED: XY[] = [
   { x: KISSA.platform.x + 70, y: KISSA.platform.y + 150 },
@@ -272,7 +281,7 @@ export interface DoorTheme {
   style: "kissa" | "garden" | "omakase" | "berlin" | "tearoom" | "cosmic";
 }
 export const DOOR_THEME: Record<string, DoorTheme> = {
-  kissa: { name: "THE KISSA", kanji: "喫茶", vibe: "warm hinoki · the hub", accent: "#ffce8c", glow: "#ffb35e", frame: "#3a2817", style: "kissa" },
+  kissa: { name: "LISTENING ROOM", kanji: "聴", vibe: "sombra's room · the hub", accent: "#ffce8c", glow: "#ffb35e", frame: "#3a2817", style: "kissa" },
   garden: { name: "THE GARDEN", kanji: "庭", vibe: "open air · dusk & koi", accent: "#cfe8a8", glow: "#7e9b5e", frame: "#4a3a22", style: "garden" },
   omakase: { name: "OMAKASE", kanji: "御任せ", vibe: "selector's counter", accent: "#a9cde8", glow: "#5a86a8", frame: "#caa06a", style: "omakase" },
   berlin: { name: "BERLIN", kanji: "地下", vibe: "concrete · fog · 4am", accent: "#ff7a72", glow: "#e0433a", frame: "#26262b", style: "berlin" },

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { ROOM, WALL, KISSA } from "../../layout";
+import { ROOM, WALL, KISSA, KISSA_FEATURED } from "../../layout";
 import type { RoomBuilder } from "../types";
 import { shell, WALL_H } from "../shared";
 import {
@@ -94,7 +94,7 @@ export const buildKissa: RoomBuilder = ({ room }) => {
   moonGlow.position.set(mx, 104, WALL + 6);
   g.add(moon, moonRing, mull1, mull2, moonGlow);
 
-  /* ---------------- the big HALLUCINATE sign, hanging over the back wall */
+  /* ---------------- the room's big sign, hanging over the back wall */
   const sign = panel(384, 70, (c, w, h) => {
     c.fillStyle = "#3f2c19";
     rr(c, 1, 1, w - 2, h - 2, 8);
@@ -105,15 +105,15 @@ export const buildKissa: RoomBuilder = ({ room }) => {
     c.stroke();
     c.textAlign = "center";
     c.textBaseline = "middle";
-    c.font = "800 34px 'Shippori Mincho', serif";
+    c.font = "800 25px 'Shippori Mincho', serif";
     c.fillStyle = "#ffce8c";
     c.shadowColor = "rgba(255,179,94,.8)";
     c.shadowBlur = 14;
-    c.fillText("HALLUCINATE", w / 2, h / 2 - 8);
+    c.fillText("SOMBRA LISTENING ROOM", w / 2, h / 2 - 8);
     c.shadowBlur = 0;
     c.font = "11px 'DM Mono'";
     c.fillStyle = "rgba(214,69,47,.95)";
-    c.fillText("音楽喫茶 · ONGAKU KISSA · A LISTENING BAR", w / 2, h / 2 + 20);
+    c.fillText("☉☽ · HALLUCINATE · 音楽喫茶 · A LISTENING BAR", w / 2, h / 2 + 20);
   }, 384);
   const signBoard = box(392, 76, 6, "#2a1c10");
   const signY = 96;
@@ -167,6 +167,9 @@ export const buildKissa: RoomBuilder = ({ room }) => {
     z.rotation.y = (R() - 0.5) * 0.3;
     g.add(z);
   }
+
+  /* ---------------- the featured crates get their own warm spot */
+  for (const sp of Object.values(KISSA_FEATURED)) g.add(glowPool(sp.x, sp.y, 110, "#ffcf7a", 0.24));
 
   /* ---------------- warm floor pools */
   g.add(glowPool(deck.x + deck.w / 2, deck.y + 30, 300, "#ffb45a", 0.16));
@@ -426,8 +429,9 @@ export const buildKissa: RoomBuilder = ({ room }) => {
   const L: [number, number, number][] = [
     [deck.x + deck.w / 2 - 110, deck.y - 30, 118],
     [bar.x + 20, bar.y + 40, 120],
-    [pf.x + pf.w / 2, pf.y - 6, 124],
-    [ROOM.w / 2, WALL + 150, 130],
+    // off the centre line, so they don't hang in front of the big sign
+    [pf.x + 36, pf.y - 6, 124],
+    [ROOM.w / 2 + 250, WALL + 150, 130],
   ];
   const lanterns: THREE.Mesh[] = [];
   L.forEach(([x, y, hgt], i) => {

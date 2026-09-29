@@ -52,10 +52,10 @@ const fit = (skin: string, body: string, hair: string, hat: Fit["hat"] = "none",
 export const REALMS: Record<string, Realm> = {
   kissa: {
     id: "kissa",
-    name: "THE KISSA",
-    kanji: "喫茶",
-    tagline: "warm hinoki · the hub",
-    lore: "A Japanese listening bar — an ongaku kissa — where the record is the reason you came.",
+    name: "SOMBRA LISTENING ROOM",
+    kanji: "聴",
+    tagline: "sombra's room · the hub",
+    lore: "Sombra's listening room — built like a Japanese ongaku kissa, where the record is the reason you came.",
     sombra: "Gongo built this bar so Sombra's room never has to close. Every realm branches off from here.",
     color: "#ffb35e",
     keeper: {
@@ -65,7 +65,8 @@ export const REALMS: Record<string, Realm> = {
       y: 470,
       fit: fit("#cf9268", "#c0432f", "#1b1b22", "phones", { top: "sombra-tee", neck: "usb" }),
       lines: [
-        "Hey — welcome to HALLUCINATE. Sombra's listening bar. The room never closes.",
+        "Hey — welcome to the Sombra Listening Room. The room never closes.",
+        "Right under the sign: the Gongo crate — Gongo's own sets, full length — and the Sombra Selection, the house picks.",
         "This place is for digging. Every realm has crates, and piles of records buried in the corners. See the glinting mounds? Walk up and dig.",
         "Anything you dig lands in your Crate Dex — press C. Some pressings are rare: first press, white label… and the odd test pressing.",
         "Doors lead to other realms — just walk through them. Press M for the map once you've been somewhere; you can jump straight back.",
@@ -74,7 +75,7 @@ export const REALMS: Record<string, Realm> = {
     },
     piles: [
       { x: 780, y: 370 },
-      { x: 360, y: 150 },
+      { x: 250, y: 380 },
     ],
     map: { x: 0.5, y: 0.5 },
   },
@@ -286,7 +287,7 @@ export const REALMS: Record<string, Realm> = {
       y: 350,
       fit: fit("#e6b184", "#5a86a8", "#5a3a22", "none", { top: "hoodie" }),
       lines: [
-        "Best view in the venue. Don't tell the Kissa.",
+        "Best view in the venue. Don't tell the Listening Room.",
         "Skyline is the melodic crate — records for the hour when the city lights come on.",
         "Across the roof there's a hedge maze. How it got up here, nobody knows.",
         "And if you smell salt air up here… follow it.",
@@ -420,7 +421,7 @@ export const SECRETS: Secret[] = [
   },
 ];
 
-/** the lucky cat in the Kissa — rub it to wander to a random realm */
+/** the lucky cat in the Listening Room — rub it to wander to a random realm */
 export const WANDER_CAT = { room: "kissa", x: 880, y: 700, zone: { x: 880, y: 652 } };
 
 /** secret ends that sit in a given room */

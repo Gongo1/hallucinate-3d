@@ -16,6 +16,8 @@ import { ingestLinks } from "@/app/actions/ingest";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { shade } from "@/lib/bar/color";
 import { phaseAt } from "@/lib/bar/clock";
+import { FULL_SET_CRATES } from "@/lib/bar/flow";
+import { CURATED_CRATES } from "@/lib/bar/layout";
 import {
   loadFit,
   saveFit,
@@ -121,6 +123,7 @@ function weightedPick(
   let total = 0;
   for (const s of shelves) {
     if (s.ingest) continue; // the 新着 paste crate isn't a radio source
+    if (s.slug && FULL_SET_CRATES.has(s.slug)) continue; // full sets are cue-only
     const w = energyWeight(s.energy ?? 3, target);
     for (const r of s.records) {
       if (!r.ytId && !r.scUrl) continue;
@@ -343,6 +346,9 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
         onPrompt: (html) => setPrompt(html),
         onBrowseShelf: (shelf) => {
           if (shelf.records.length) setCrate({ shelf, idx: 0 });
+          // an empty curated crate is being stocked by Sombra — not a paste box
+          else if (shelf.slug && CURATED_CRATES.has(shelf.slug))
+            gameRef.current.toast(`${shelf.label.replace(/·.*/, "").trim()} is being curated — check back soon`);
           else setIngestOpen(true);
         },
         onOpenIngest: () => setIngestOpen(true),
@@ -805,21 +811,16 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
       ),
     []
   );
-  // selecting a record CUES it for the whole room (plays next). A whole shelf
-  // cues tracks in order, each subject to the per-user cue cap (host-enforced;
-  // we also stop early client-side so the UI doesn't imply more got through).
+  // selecting a record CUES it for the whole room (plays next), subject to the
+  // per-user cue cap (host-enforced). One record at a time — no whole-shelf cue.
   const cueFromCrate = useCallback(
-    (start: number, whole: boolean) => {
+    (idx: number) => {
       const p = presenceRef.current;
-      if (!crate || !p) return;
-      const recs = whole ? crate.shelf.records : [crate.shelf.records[start]];
-      let fresh = false;
-      for (const r of recs) {
-        if (!p.canCue()) break;
-        p.cue(r);
-        if (keep(r, crate.shelf).isNew) fresh = true; // cueing a record keeps it in your dex
-      }
-      if (fresh) giftRef.current({ kind: "keep" });
+      if (!crate || !p || !p.canCue()) return;
+      const r = crate.shelf.records[idx];
+      p.cue(r);
+      // cueing a record keeps it in your dex
+      if (keep(r, crate.shelf).isNew) giftRef.current({ kind: "keep" });
       refreshFlowUi();
       setCrate(null);
     },
@@ -962,7 +963,7 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           <br />
           E · dig · talk · browse &nbsp; M · map &nbsp; C · dex &nbsp; R · wander
           <br />
-          SPACE · mute me &nbsp; N · skip room
+          SPACE · mute me &nbsp; N · skip room &nbsp; V · view
         </div>
       </div>
 
@@ -1009,8 +1010,7 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           dug={progress.dug}
           onClose={() => setCrate(null)}
           onFlip={flip}
-          onPlay={() => cueFromCrate(crate.idx, false)}
-          onPlayShelf={() => cueFromCrate(0, true)}
+          onPlay={() => cueFromCrate(crate.idx)}
           onKeep={(t) => {
             if (keep(t, crate.shelf).isNew) giftRef.current({ kind: "keep" });
           }}
@@ -1160,7 +1160,7 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           <div id="presents">☉☽ &nbsp;SOMBRA PRESENTS</div>
           <div id="kanji">音楽喫茶</div>
           <div id="title">HALLUCINATE</div>
-          <div id="sub">ONGAKU KISSA · A LISTENING BAR</div>
+          <div id="sub">THE SOMBRA LISTENING ROOM · 音楽喫茶</div>
           <div id="enter">▸ SLIDE THE DOOR OPEN ◂</div>
           {fit && (
             <button
@@ -1409,7 +1409,6 @@ function Crate({
   onClose,
   onFlip,
   onPlay,
-  onPlayShelf,
   onKeep,
 }: {
   crate: CrateState;
@@ -1419,7 +1418,6 @@ function Crate({
   onClose: () => void;
   onFlip: (d: number) => void;
   onPlay: () => void;
-  onPlayShelf: () => void;
   onKeep: (t: Track) => void;
 }) {
   const { shelf, idx } = crate;
@@ -1506,9 +1504,6 @@ function Crate({
         <div id="crateMeta">
           {idx + 1} / {shelf.records.length}
         </div>
-        <button id="playShelf" onClick={onPlayShelf} disabled={atCap}>
-          ⤵ cue the whole shelf →
-        </button>
       </div>
     </div>
   );
@@ -1550,6 +1545,7 @@ function Ingest({
     () =>
       shelves.map((s) => ({
         id: s.id,
+        slug: s.slug,
         label: s.label.replace(/·.*/, "").trim(),
       })),
     [shelves]
@@ -1647,6 +1643,7 @@ function Ingest({
             {options.map((o) => (
               <option key={o.id} value={o.id}>
                 {o.label}
+                {o.slug && CURATED_CRATES.has(o.slug) ? " — curated (owner)" : ""}
               </option>
             ))}
             <option value={NEW_SHELF}>＋ new shelf…</option>

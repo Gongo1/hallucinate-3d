@@ -13,6 +13,14 @@
 /** Library cap — fixed, not room-relative. No track at or over 15 minutes. */
 export const MAX_TRACK_SECONDS = 900;
 
+/**
+ * The one exception: crates of full DJ sets (by shelf slug) may hold tracks over
+ * the cap, and they are CUE-ONLY — the auto-radio never picks them, so a 3-hour
+ * set only plays when someone chooses it (the duration backstop lets it run).
+ * Owner decision, 2026-09-29: Gongo's own uploads.
+ */
+export const FULL_SET_CRATES: ReadonlySet<string> = new Set(["gongo"]);
+
 export interface FlowLimits {
   /** max pending cue entries a single user may hold (Infinity when solo) */
   cueCap: number;

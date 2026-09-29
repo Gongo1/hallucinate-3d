@@ -56,7 +56,7 @@ export const WALL = 28;
 //   • Berlin  — a side door on the lower-left wall, below the shelf column
 const KISSA: RoomDef = {
   id: "kissa",
-  name: "音楽喫茶 · KISSA",
+  name: "SOMBRA LISTENING ROOM",
   scene: "kissa",
   doors: [
     {
@@ -189,7 +189,7 @@ const OMAKASE: RoomDef = {
       w: 104,
       h: 24,
       facing: "up",
-      label: "back to the kissa",
+      label: "back to the listening room",
     },
     {
       to: "archive",
@@ -223,7 +223,7 @@ const BERLIN: RoomDef = {
       w: 20,
       h: 96,
       facing: "left",
-      label: "back to the kissa",
+      label: "back to the listening room",
     },
     {
       to: "warehouse",
