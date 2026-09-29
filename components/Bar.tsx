@@ -890,11 +890,7 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           {!menuOpen && unseenGifts > 0 && <span className="giftDotMenu">🎁</span>}
         </button>
         {started && <VenueClock engineRef={engineRef} />}
-        {started && roster > 0 && (
-          <div id="roster" title="listeners in the bar right now">
-            ☕ {roster} {roster === 1 ? "listener" : "listeners"}
-          </div>
-        )}
+        {started && roster > 0 && <RosterPill real={roster} />}
         {started && (
           <button
             id="addedBtn"
@@ -1247,6 +1243,24 @@ function VenueClock({ engineRef }: { engineRef: RefObject<BarEngine | null> }) {
       <span className="vcGlyph">{phase.glyph}</span>
       <span className="vcLabel">{phase.label}</span>
       <span className="vcTime">{phase.utcLabel}</span>
+    </div>
+  );
+}
+
+// The listener pill counts the bar's regulars (the NPCs) as listeners, so nobody
+// walks into an empty room: 10–20, reshuffled each UTC hour and seeded by the hour,
+// so everyone in the bar sees the same number. Real listeners beyond you add on top.
+// Display only — solo mode, host election and cue caps still run on the real roster.
+function RosterPill({ real }: { real: number }) {
+  const [hour, setHour] = useState(() => Math.floor(Date.now() / 3_600_000));
+  useEffect(() => {
+    const t = setInterval(() => setHour(Math.floor(Date.now() / 3_600_000)), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  const n = 10 + Math.floor(mulberry32(hour)() * 11) + Math.max(0, real - 1);
+  return (
+    <div id="roster" title="listeners in the bar right now">
+      ☕ {n} listeners
     </div>
   );
 }
