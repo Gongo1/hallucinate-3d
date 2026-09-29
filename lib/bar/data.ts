@@ -1,7 +1,7 @@
 import "server-only";
 import { getServerClient } from "@/lib/supabase/server";
 import type { Shelf, Track } from "./types";
-import { FULL_SET_CRATES } from "./flow";
+import { isFullSet } from "./flow";
 
 // DB → runtime mapping. The DB keeps the Supabase-normalized field names
 // (yt_id / sc_url / is_ingest); the renderer wants the prototype's camelCase
@@ -62,6 +62,6 @@ export async function loadShelves(): Promise<Shelf[]> {
     records: (s.records ?? [])
       .slice()
       .sort((a, b) => a.sort - b.sort)
-      .map((r) => (s.slug && FULL_SET_CRATES.has(s.slug) ? { ...toTrack(r), fullSet: true } : toTrack(r))),
+      .map((r) => (isFullSet(s.slug ?? undefined, r.duration_seconds) ? { ...toTrack(r), fullSet: true } : toTrack(r))),
   }));
 }

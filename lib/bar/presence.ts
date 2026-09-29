@@ -84,7 +84,10 @@ type Intent =
   | { kind: "skip"; by: string }
   | { kind: "cue"; track: Track; by: string; byId: string }
   | { kind: "uncue"; recordKey: string; byId: string } // remove my own pending entry
-  | { kind: "clearCue"; by: string }; // wipe the whole cue (anti-spam)
+  | { kind: "clearCue"; by: string } // wipe the whole cue (anti-spam)
+  // "the track that started at `startedAt` just ended on my player" — lets ANY
+  // listener's natural end move the room on, not only the host's
+  | { kind: "ended"; startedAt: number };
 
 interface Pose {
   x: number;
@@ -95,6 +98,8 @@ interface Pose {
 interface PresenceOpts {
   /** the local listener's starting fit (from localStorage / a fresh pick) */
   fit?: Fit;
+  /** realtime channel override — dev/testing only (never set in production) */
+  channel?: string;
   getPose: () => Pose;
   onChat: (m: ChatMessage) => void;
   onReact: (r: Reaction) => void;
@@ -146,6 +151,10 @@ export class BarPresence {
   private lurking = false;
   private pumpTimer: ReturnType<typeof setInterval> | null = null;
   private roomTimer: ReturnType<typeof setInterval> | null = null;
+  /** follower fallback: advance ourselves if the host never answers our "ended" */
+  private endWatchdog: ReturnType<typeof setTimeout> | null = null;
+  /** the now-playing track's length as the local player reported it (s) */
+  private nowDuration: { startedAt: number; seconds: number } | null = null;
   private last: Pose = { x: -1, y: -1, dir: 1 };
   private seq = 0;
   private ticks = 0;
@@ -178,7 +187,7 @@ export class BarPresence {
   start(opts?: { lurk?: boolean }) {
     this.lurking = !!opts?.lurk;
     const sb = getBrowserClient();
-    const ch = sb.channel("hallucinate-bar", {
+    const ch = sb.channel(this.opts.channel ?? "hallucinate-bar", {
       config: { presence: { key: this.id }, broadcast: { self: false } },
     });
     this.channel = ch;
@@ -228,7 +237,12 @@ export class BarPresence {
     this.pumpTimer = setInterval(() => this.pump(), 110);
     // host heartbeat: re-broadcast so late joiners + clock drift stay corrected
     this.roomTimer = setInterval(() => {
-      if (this.isHost() && this.room) this.broadcastRoom();
+      if (!this.isHost() || !this.room) return;
+      this.broadcastRoom();
+      // wall-clock backstop: the track's known length has clearly passed and no
+      // player reported the end (everyone muted / backgrounded / blocked) — move on
+      const d = this.knownDuration();
+      if (d && Date.now() - this.room.startedAt > (d + 12) * 1000) this.advance(false);
     }, 4000);
     // bootstrap the room: adopt the host's state, or start one if I'm host-elect
     this.requestRoom();
@@ -247,6 +261,8 @@ export class BarPresence {
     if (this.pumpTimer) clearInterval(this.pumpTimer);
     if (this.roomTimer) clearInterval(this.roomTimer);
     if (this.cooldownAdvanceTimer) clearTimeout(this.cooldownAdvanceTimer);
+    if (this.endWatchdog) clearTimeout(this.endWatchdog);
+    this.endWatchdog = null;
     this.pumpTimer = null;
     this.roomTimer = null;
     this.cooldownAdvanceTimer = null;
@@ -421,6 +437,13 @@ export class BarPresence {
       cue.splice(idx, 1);
       this.room = { ...this.room, cue, rev: this.room.rev + 1, host: this.id };
       this.publishRoom();
+    } else if (intent.kind === "ended") {
+      // someone's player finished the CURRENT track (not a stale one) — if the
+      // timing is plausible, advance. Ignores early ends (a player that errored
+      // or joined oddly) so one client can't cut a track short.
+      if (intent.startedAt !== this.room.startedAt) return;
+      if (!this.plausibleEnd()) return;
+      this.advance(false);
     } else if (intent.kind === "clearCue") {
       if (!this.room.cue.length) return;
       this.room = { ...this.room, cue: [], rev: this.room.rev + 1, host: this.id };
@@ -509,9 +532,44 @@ export class BarPresence {
     this.publishRoom();
   }
 
-  /** Local player reported the current track ended → host advances the room. */
+  /**
+   * Local player reported the current track ended. The host advances the room;
+   * anyone else tells the host (the host's own player may be muted, blocked or
+   * asleep — that used to stall the whole room). If the host doesn't move within
+   * a few seconds, this listener advances the room itself: the next track is
+   * deterministic (cue head, else the seeded radio), and if the host does act too
+   * the room converges on one state (newer rev wins, ties → lowest host id).
+   */
   trackEnded() {
-    if (this.isHost() && this.room) this.advance(false); // natural end, no cooldown
+    if (!this.room) return;
+    if (this.isHost()) {
+      this.advance(false); // natural end, no cooldown
+      return;
+    }
+    const startedAt = this.room.startedAt;
+    if (!this.plausibleEnd()) return; // an early end (error / odd join) moves nothing
+    this.sendIntent({ kind: "ended", startedAt });
+    if (this.endWatchdog) clearTimeout(this.endWatchdog);
+    this.endWatchdog = setTimeout(() => {
+      this.endWatchdog = null;
+      if (this.room && this.room.startedAt === startedAt) this.advance(false);
+    }, 8000);
+  }
+
+  /** Has the current track plausibly run its course? (known length − 20s, or
+   *  ≥30s when the length is unknown) — so one client can't cut a track short. */
+  private plausibleEnd(): boolean {
+    if (!this.room) return false;
+    const elapsed = (Date.now() - this.room.startedAt) / 1000;
+    const d = this.knownDuration();
+    return d ? elapsed >= d - 20 : elapsed >= 30;
+  }
+
+  /** The now-playing track's length in seconds, if anyone knows it yet. */
+  private knownDuration(): number | null {
+    if (!this.room?.now) return null;
+    if (this.nowDuration && this.nowDuration.startedAt === this.room.startedAt) return this.nowDuration.seconds;
+    return this.room.now.durationSeconds ?? null;
   }
 
   /**
@@ -521,7 +579,10 @@ export class BarPresence {
    * FULL_SET_CRATES crate (someone cued them on purpose) are allowed to run.
    */
   durationKnown(seconds: number) {
-    if (!this.isHost() || !this.room) return;
+    if (!this.room) return;
+    // remember it for the wall-clock backstop + the "ended" plausibility check
+    this.nowDuration = { startedAt: this.room.startedAt, seconds };
+    if (!this.isHost()) return;
     if (this.room.now?.fullSet) return;
     if (seconds >= MAX_TRACK_SECONDS) this.advance(false); // backstop, no cooldown
   }

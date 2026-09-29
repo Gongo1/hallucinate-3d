@@ -16,7 +16,6 @@ import { ingestLinks } from "@/app/actions/ingest";
 import { getBrowserClient } from "@/lib/supabase/client";
 import { shade } from "@/lib/bar/color";
 import { phaseAt } from "@/lib/bar/clock";
-import { FULL_SET_CRATES } from "@/lib/bar/flow";
 import { CURATED_CRATES } from "@/lib/bar/layout";
 import {
   loadFit,
@@ -123,10 +122,10 @@ function weightedPick(
   let total = 0;
   for (const s of shelves) {
     if (s.ingest) continue; // the 新着 paste crate isn't a radio source
-    if (s.slug && FULL_SET_CRATES.has(s.slug)) continue; // full sets are cue-only
     const w = energyWeight(s.energy ?? 3, target);
     for (const r of s.records) {
       if (!r.ytId && !r.scUrl) continue;
+      if (r.fullSet) continue; // full DJ sets are cue-only — never the radio's pick
       pool.push({ track: r, w });
       total += w;
     }
@@ -431,6 +430,11 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
     // current track + offset are already known and playable in-gesture.
     const presence: BarPresence = new BarPresence({
       fit: initialFit,
+      // dev/testing only: ?channel=… joins a private room instead of the live one
+      channel:
+        process.env.NODE_ENV !== "production"
+          ? new URLSearchParams(location.search).get("channel") ?? undefined
+          : undefined,
       getPose: () =>
         engineRef.current?.getPlayerPose() ?? { x: 570, y: 470, dir: 1 },
       onRoster: (n) => setRoster(n),
@@ -497,6 +501,8 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
       },
     });
     presenceRef.current = presence;
+    if (process.env.NODE_ENV !== "production")
+      (window as unknown as { __barPresence?: BarPresence }).__barPresence = presence;
     presence.start({ lurk: true });
     engine.setRemoteSource(() => presence.remotes);
 

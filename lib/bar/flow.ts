@@ -14,12 +14,19 @@
 export const MAX_TRACK_SECONDS = 900;
 
 /**
- * The one exception: crates of full DJ sets (by shelf slug) may hold tracks over
- * the cap, and they are CUE-ONLY — the auto-radio never picks them, so a 3-hour
- * set only plays when someone chooses it (the duration backstop lets it run).
- * Owner decision, 2026-09-29: Gongo's own uploads.
+ * The one exception: owner-curated crates (by shelf slug) may hold full DJ sets
+ * over the cap. Those sets are CUE-ONLY — the auto-radio never picks them, so a
+ * 3-hour set only plays when someone chooses it (the duration backstop lets it
+ * run). Short tracks in the same crates play on the radio as normal.
+ * Owner decisions, 2026-09-29: Gongo's own uploads; the Sombra Selection.
  */
-export const FULL_SET_CRATES: ReadonlySet<string> = new Set(["gongo"]);
+export const FULL_SET_CRATES: ReadonlySet<string> = new Set(["gongo", "sombra-selection"]);
+
+/** A track in a FULL_SET_CRATES crate is a (cue-only) full set if it's over the
+ *  cap — or of unknown length (SoundCloud links arrive without one). */
+export function isFullSet(crateSlug: string | undefined, durationSeconds: number | null | undefined): boolean {
+  return !!crateSlug && FULL_SET_CRATES.has(crateSlug) && (durationSeconds == null || durationSeconds >= MAX_TRACK_SECONDS);
+}
 
 export interface FlowLimits {
   /** max pending cue entries a single user may hold (Infinity when solo) */
