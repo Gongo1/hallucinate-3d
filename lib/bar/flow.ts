@@ -18,10 +18,10 @@ export const MAX_TRACK_SECONDS = 900;
  * over the cap. Those sets are CUE-ONLY — the auto-radio never picks them, so a
  * 3-hour set only plays when someone chooses it (the duration backstop lets it
  * run). Short tracks in the same crates play on the radio as normal.
- * Owner decisions, 2026-09-29: Gongo's own uploads; the Sombra Selection; THE
- * STACKS (the labyrinth's hidden crate — it holds Gongo's long sets).
+ * Owner decisions, 2026-09-29: Gongo's own uploads; the Sombra Selection. A set
+ * lives ONLY in its own crate (copies elsewhere are hidden — see data.ts).
  */
-export const FULL_SET_CRATES: ReadonlySet<string> = new Set(["gongo", "sombra-selection", "stacks"]);
+export const FULL_SET_CRATES: ReadonlySet<string> = new Set(["gongo", "sombra-selection"]);
 
 /** A track in a FULL_SET_CRATES crate is a (cue-only) full set if it's over the
  *  cap — or of unknown length (SoundCloud links arrive without one). */

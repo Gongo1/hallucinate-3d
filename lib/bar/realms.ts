@@ -358,8 +358,8 @@ export const REALMS: Record<string, Realm> = {
     name: "LABYRINTH",
     kanji: "迷路",
     tagline: "get lost · find the centre",
-    lore: "A real hedge maze. Somewhere in the middle, a hidden crate.",
-    sombra: "The best records are found by getting lost. The Stacks crate at the centre is the reward.",
+    lore: "A real hedge maze. Records that wander off from every realm end up in here.",
+    sombra: "The best records are found by getting lost. Dig the piles for strays from every realm — the one at the centre is the reward.",
     color: "#86b86a",
     keeper: {
       name: "Hana",
@@ -370,13 +370,14 @@ export const REALMS: Record<string, Realm> = {
       fit: fit("#f4cda3", "#7e9b5e", "#b0593a", "cap", { back: "tote" }),
       lines: [
         "Lost? Good. That's the idea.",
-        "The Stacks crate is hidden in the very centre. Follow the long corridor, then double back.",
-        "There are piles in the dead ends too — the maze rewards the stubborn.",
+        "Records wander off from the other rooms and end up in here. There's a pile at the very centre — follow the long corridor, then double back.",
+        "More piles in the dead ends — the maze rewards the stubborn.",
       ],
     },
     piles: [
       { x: 73, y: 74 },
       { x: 973, y: 446 },
+      { x: 435, y: 447 }, // the centre of the maze — where the hidden crate used to sit
     ],
     map: { x: 0.14, y: 0.5 },
   },

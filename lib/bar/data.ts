@@ -3,9 +3,11 @@ import { getServerClient } from "@/lib/supabase/server";
 import type { Shelf, Track } from "./types";
 import { FULL_SET_CRATES, isFullSet } from "./flow";
 
-// Rows confirmed unplayable (video made private / removed) — hidden from every
-// crate + the radio until the row is deleted in Supabase (the anon key can't
-// delete). Checked 2026-09-29.
+// Retired + unplayable rows — hidden until they're deleted in Supabase (the anon
+// key can't delete). 2026-09-29.
+const RETIRED_CRATES = new Set([
+  "stacks", // THE STACKS (labyrinth) — owner: Gongo's sets live only in the Gongo crate
+]);
 const UNPLAYABLE = new Set([
   "8f840e47-1ed7-4265-b133-b7aaa0ccca9d", // "Fade" (HOUSE) — the YouTube video is now private
 ]);
@@ -58,10 +60,10 @@ export async function loadShelves(): Promise<Shelf[]> {
     .order("sort", { ascending: true });
   if (error) throw new Error(`loadShelves: ${error.message}`);
 
-  // A SoundCloud set that lives in a full-set crate (GONGO, THE STACKS, the
-  // Selection) is dropped from ordinary crates: there it would hit the 15-min cap
-  // and get skipped — it plays in full from its own crate instead.
-  const rows = (data ?? []) as unknown as ShelfRow[];
+  // A set lives only in its own full-set crate (the Gongo crate, the Selection):
+  // any copy of it filed anywhere else is dropped — there it would hit the
+  // 15-min cap and get skipped anyway.
+  const rows = ((data ?? []) as unknown as ShelfRow[]).filter((s) => !(s.slug && RETIRED_CRATES.has(s.slug)));
   const setUrls = new Set(
     rows
       .filter((s) => s.slug && FULL_SET_CRATES.has(s.slug))

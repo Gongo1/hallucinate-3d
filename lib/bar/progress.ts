@@ -259,7 +259,11 @@ export function totals(shelves: Shelf[]) {
  */
 export function pickDig(room: string, shelves: Shelf[]): { track: Track; shelf: Shelf } | null {
   load();
-  const recs = realmRecords(room, shelves);
+  // a realm with no crates of its own (the labyrinth) digs up LOST records —
+  // strays from every other realm's crates
+  let recs = realmRecords(room, shelves);
+  if (!recs.length)
+    recs = shelves.filter((s) => !s.ingest).flatMap((s) => s.records.map((track) => ({ track, shelf: s })));
   if (!recs.length) return null;
   const fresh = recs.filter((r) => !state.dug[recordKey(r.track)]);
   const unseen = fresh.filter((r) => !state.seen[recordKey(r.track)]);
