@@ -394,11 +394,13 @@ export class BarEngine {
     const right = rest.filter(isRight);
 
     // ----- left column (the main library) -----
+    // It ends ABOVE the Berlin door (left wall, y≥360) — crates made through the
+    // 新着 box land here, so extra ones shrink to fit instead of walling off the door.
     const top = WALL + 18;
-    const bottom = ROOM.h - WALL - 18;
+    const bottom = 346;
     const slot = Math.min(96, (bottom - top) / Math.max(1, left.length));
     const boxW = 138;
-    const boxH = Math.min(72, slot - 20);
+    const boxH = Math.max(26, Math.min(72, slot - 20));
     const cx = WALL + 14 + boxW / 2;
     left.forEach((data, i) => {
       const cy = top + i * slot + slot / 2;
