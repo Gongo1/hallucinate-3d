@@ -11,6 +11,7 @@ This is the curated knowledge base; one-off session artifacts live in `../output
 - [Overview](overview.md) — what the product is, the nested-worlds story, the stack
 - [Architecture](architecture.md) — modules, the one-shared-stream model, data flow
 - [The door](door.md) — the arrival ritual: knock, slide, swell; real headcount; the in-gesture audio rule
+- [Members](members.md) — member numbers, keys and /k links, the Sombra list, weekly board scoring
 - [Rooms](rooms.md) — room-as-data registry, the Garden, doors/transitions
 - [The digging game](game.md) — realms, keepers, dig piles, Crate Dex, secrets, map + fast travel
 - [Shared player & flow rules](playback-and-flow.md) — synced room audio, cue/skip/cooldown, the P-scaling limits
