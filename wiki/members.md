@@ -23,3 +23,9 @@ Anonymous membership, shipped c18ee75. Spec: `KB/Sombra/outputs/html/2026-09-29-
 
 ## Testing locally
 Run the dev server with `SUPABASE_SERVICE_ROLE_KEY` in the process env (pulled to a temp file, never written into `.env.local`). Tests create real members, so delete them and `setval('hallu_member_number_seq', 3, false)` afterwards.
+
+## Founding numbers + folding (96f001f)
+- **A device can knock before claiming its founding number** (Gongo got #003). `/booth` "Make this device #001" and a #002 hand-off link both call `foldMember(old, founding)`: points and the list signup move over, unused keys go, and the old row is deleted unless someone joined on its key.
+- `hallu_rewind_numbers()` (migration `20260930b_number_fold.sql`, installed) then sets the sequence to max(number)+1, so no number is left held by nobody.
+- **Hand-off keys take priority over an existing membership** in `knockIn`, and the door shows "#002 is waiting for you" even to a member.
+- **Real members as of 2026-09-29:** #003 (Gongo's phone, to be folded into #001) and #004 (unknown: Gongo's other device, or Paula?).

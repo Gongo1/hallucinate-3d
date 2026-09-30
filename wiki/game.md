@@ -1,6 +1,6 @@
 # The digging game (Sep 2026)
 
-HALLUCINATE plays like **Pokémon meets crate-digging**. Each room is a *realm* with a keeper who explains it (and how it ties to Sombra), dig piles that turn up records, and secret passages to far-off realms. Everything you find goes into your **Crate Dex**. The point is still to find music: digging only *reveals* records from the realm's own crates, and cueing still goes through the shared queue and flow rules.
+HALLUCINATE plays like **Pokémon meets crate-digging**. Each room is a *realm* with a keeper who explains it (and how it ties to Sombra), crates to dig through (30s previews), and secret passages to far-off realms. **Dig piles were removed 2026-09-29 (96f001f, owner: "kind of annoying")**: crate digging is the game. Keeping a crate record fills the Dex, counts toward titles and badges, and scores a dig on the weekly board. Everything you find goes into your **Crate Dex**. The point is still to find music: digging only *reveals* records from the realm's own crates, and cueing still goes through the shared queue and flow rules.
 
 ## Modules
 | File | What it holds |
