@@ -181,6 +181,16 @@ export class BarPlayer {
     this.emit();
   }
 
+  /** Stop both players (nothing to rejoin yet); the next room update starts it. */
+  silence() {
+    try {
+      this.yt?.pauseVideo();
+    } catch {}
+    try {
+      this.sc?.pause();
+    } catch {}
+  }
+
   /** Stop previewing and hand back to the room (onPreviewEnd rejoins it). */
   endPreview() {
     if (!this.previewTimer) return;
@@ -477,6 +487,7 @@ export class BarPlayer {
       this.sc.load(url, {
         ...BarPlayer.SC_OPTS,
         callback: () => {
+          if (this.state.source !== "sc") return; // you moved on while it loaded
           if (seekMs > 0) this.sc?.seekTo(seekMs);
           this.sc?.play();
         },
@@ -502,17 +513,32 @@ export class BarPlayer {
     if (this.sc) return;
     this.sc = w.SC.Widget(this.opts.scFrame);
     const E = w.SC.Widget.Events;
+    // Only the ACTIVE source may make sound or move the room. A SoundCloud load
+    // is slow (long sets especially): if you've already switched back to YouTube
+    // (closed a preview) by the time it lands, it must not start on top, and its
+    // pause/finish must not touch the room's state.
+    const scActive = () => this.state.source === "sc";
     this.sc.bind(E.READY, () => {
       this.scReady = true;
+      if (!scActive()) {
+        this.sc?.pause();
+        return;
+      }
       if (this.pendingSeekMs > 0) {
         this.sc?.seekTo(this.pendingSeekMs);
         this.pendingSeekMs = 0;
       }
     });
-    this.sc.bind(E.FINISH, () => this.onTrackEnded());
-    this.sc.bind(E.PLAY, () => this.setPlaying(true));
-    this.sc.bind(E.PAUSE, () => this.setPlaying(false));
-    this.sc.bind(E.ERROR, () => this.onTrackEnded());
+    this.sc.bind(E.FINISH, () => scActive() && this.onTrackEnded());
+    this.sc.bind(E.PLAY, () => {
+      if (!scActive()) {
+        this.sc?.pause();
+        return;
+      }
+      this.setPlaying(true);
+    });
+    this.sc.bind(E.PAUSE, () => scActive() && this.setPlaying(false));
+    this.sc.bind(E.ERROR, () => scActive() && this.onTrackEnded());
   }
 
   /* ----------------------------------------------------------- SDKs */
@@ -548,6 +574,14 @@ export class BarPlayer {
           },
           onStateChange: (e: { data: number }) => {
             const YT = w.YT!;
+            // same rule as SoundCloud: an inactive source is silenced, never obeyed
+            if (this.state.source !== "yt") {
+              if (e.data === YT.PlayerState.PLAYING)
+                try {
+                  this.yt?.pauseVideo();
+                } catch {}
+              return;
+            }
             if (e.data === YT.PlayerState.ENDED) this.onTrackEnded();
             else if (e.data === YT.PlayerState.PLAYING) this.setPlaying(true);
             else if (e.data === YT.PlayerState.PAUSED) this.setPlaying(false);

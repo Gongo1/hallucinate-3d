@@ -84,12 +84,10 @@ export interface Progress {
   badges: Record<string, number>;
   /** gifts you've been given (lib/bar/gifts.ts) → when */
   gifts: Record<string, number>;
-  /** digs in a row that turned up no gift (a gift is guaranteed after a few) */
-  giftMiss: number;
 }
 
 const KEY = "hallucinate-progress-v1";
-const empty = (): Progress => ({ visited: {}, seen: {}, dug: {}, secrets: {}, talked: {}, badges: {}, gifts: {}, giftMiss: 0 });
+const empty = (): Progress => ({ visited: {}, seen: {}, dug: {}, secrets: {}, talked: {}, badges: {}, gifts: {} });
 
 let state: Progress = empty();
 let loaded = false;
@@ -195,12 +193,6 @@ export function markGift(id: string): boolean {
   save();
   return true;
 }
-export function setGiftMiss(n: number) {
-  load();
-  state.giftMiss = n;
-  save();
-}
-
 export function markTalked(room: string) {
   load();
   if (state.talked[room]) return;
@@ -249,24 +241,3 @@ export function totals(shelves: Shelf[]) {
   };
 }
 
-/* ------------------------------------------------------------ digging */
-
-/**
- * What a dig pile turns up: a record from THIS realm's crates, preferring ones
- * you haven't dug yet (then ones you haven't even seen). Returns null if the
- * realm has no records yet. Selection only — cueing is the caller's business
- * and still goes through presence + flow rules.
- */
-export function pickDig(room: string, shelves: Shelf[]): { track: Track; shelf: Shelf } | null {
-  load();
-  // a realm with no crates of its own (the labyrinth) digs up LOST records —
-  // strays from every other realm's crates
-  let recs = realmRecords(room, shelves);
-  if (!recs.length)
-    recs = shelves.filter((s) => !s.ingest).flatMap((s) => s.records.map((track) => ({ track, shelf: s })));
-  if (!recs.length) return null;
-  const fresh = recs.filter((r) => !state.dug[recordKey(r.track)]);
-  const unseen = fresh.filter((r) => !state.seen[recordKey(r.track)]);
-  const pool = unseen.length ? unseen : fresh.length ? fresh : recs;
-  return pool[Math.floor(Math.random() * pool.length)];
-}

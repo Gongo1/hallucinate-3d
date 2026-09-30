@@ -9,8 +9,8 @@ import {
   verifyToken,
 } from "@/lib/booth/auth";
 import { ADMIN_EVENT, BAR_CHANNEL, type AdminCmd } from "@/lib/booth/commands";
-import { MEMBER_COOKIE, MEMBER_MAX_AGE, mintMemberCookie, newKeyCode } from "@/lib/members/auth";
-import { adminClient } from "@/lib/members/store";
+import { MEMBER_COOKIE, MEMBER_MAX_AGE, mintMemberCookie, newKeyCode, readMemberCookie } from "@/lib/members/auth";
+import { adminClient, foldMember } from "@/lib/members/store";
 
 // God-mode authority lives HERE, on the server. The client can call these, but
 // every privileged action re-verifies the signed owner cookie before doing
@@ -94,6 +94,10 @@ export async function boothTakeNumber(n: number): Promise<{ ok: boolean }> {
   const { data } = await sb.from("hallu_members").select("id").eq("number", n).maybeSingle();
   const value = data ? mintMemberCookie(data.id as string) : null;
   if (!value) return { ok: false };
+  // this device may already hold a throwaway number (knocked before claiming):
+  // fold it in so its points carry over and no number is left orphaned
+  const current = readMemberCookie(jar.get(MEMBER_COOKIE)?.value);
+  if (current) await foldMember(current, data!.id as string);
   jar.set(MEMBER_COOKIE, value, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",

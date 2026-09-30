@@ -21,8 +21,10 @@ async function doorGuest(jar: Awaited<ReturnType<typeof cookies>>) {
   try {
     const id = readMemberCookie(jar.get(MEMBER_COOKIE)?.value);
     const member = id ? await memberNumber(id) : null;
-    const code = member ? null : jar.get(KEY_COOKIE)?.value;
-    const key = code ? await keyInfo(code) : null;
+    // a member's door ignores ordinary invites, but a hand-off still shows
+    const code = jar.get(KEY_COOKIE)?.value;
+    const found = code ? await keyInfo(code) : null;
+    const key = found && (!member || found.claims) ? found : null;
     const claim = key?.claims ? await memberNumber(key.claims) : null;
     return { member, invite: key ? { from: key.ownerNumber, claim } : null };
   } catch {

@@ -227,12 +227,12 @@ export function Dex({
             {buried > 0 && (
               <div className="dexBuried">
                 <span className="q">???</span> × {buried} still buried{" "}
-                {visited ? "— dig the piles or flip the crates here" : "in this realm"}
+                {visited ? "— flip the crates here" : "in this realm"}
               </div>
             )}
             {!recs.length && <div className="dexEmpty">This realm&apos;s crates are empty for now.</div>}
             {recs.length > 0 && !dug.length && (
-              <div className="dexEmpty">Nothing dug here yet. Find a glinting pile, or open a crate and hit ✦ keep.</div>
+              <div className="dexEmpty">Nothing dug here yet. Open a crate, have a listen, and hit ✦ keep.</div>
             )}
           </div>
         </div>
@@ -268,7 +268,7 @@ function Stash({ progress }: { progress: Progress }) {
   return (
     <div className="stashBody">
       <div className="stashIntro">
-        You arrived in basic clothes. Everything here was <b>gifted</b> — by the keepers, the piles, the
+        You arrived in basic clothes. Everything here was <b>gifted</b> — by the keepers, the
         crates, the secrets. Wear the gear (◇ your fit); the keepsakes each tell you a little more about
         what Sombra is.
         <span className="stashTally">
@@ -301,7 +301,7 @@ function Stash({ progress }: { progress: Progress }) {
       {gifts.some((g) => !progress.gifts?.[g.id]) && (
         <>
           <div className="stashLockedHead">
-            still out there — talk to every keeper, dig the piles, keep records, bring records, find the secrets
+            still out there — talk to every keeper, keep records, bring records, find the secrets
           </div>
           <div className="stashLocked">
             {gifts

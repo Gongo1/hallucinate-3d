@@ -48,12 +48,10 @@ import {
   markDug,
   markSecret,
   markTalked,
-  pickDig,
   recordKey,
   titleFor,
 } from "@/lib/bar/progress";
 import { AvatarPreview, TierChip, useProgress, type FlowUi } from "@/components/game/shared";
-import { DigReveal, type Reveal } from "@/components/game/DigReveal";
 import { Dialogue } from "@/components/game/Dialogue";
 import { Dex, STASH } from "@/components/game/Dex";
 import { GiftCard, type GiftItem } from "@/components/game/GiftCard";
@@ -161,7 +159,6 @@ function weightedPick(
 /** the game layer's engine/UI handlers (kept in a ref so callbacks see fresh state) */
 interface GameHandlers {
   onArrive: (room: string) => void;
-  onDig: (room: string, pileIdx: number) => void;
   onTalk: (room: string) => void;
   onSecret: (id: string, first: boolean) => void;
   toast: (text: string, tone?: Toast["tone"], ms?: number) => void;
@@ -234,7 +231,7 @@ export default function Bar({
   const [memberNo, setMemberNo] = useState<number | null>(member);
   const [membership, setMembership] = useState<Membership | null>(null);
   const [listOpen, setListOpen] = useState(false);
-  const listPendingRef = useRef(false); // first dig done: offer the list once it's put away
+  const listPendingRef = useRef(false); // first crate dug: offer the list once it's closed
   const memberToastRef = useRef<string | null>(null); // "You're #118" waits for the reveal
   const [prompt, setPrompt] = useState<string | null>(null);
   const [np, setNp] = useState<PlayerState>(EMPTY_NP);
@@ -288,7 +285,6 @@ export default function Bar({
   // through presence + the flow rules like any crate. -----
   const progress = useProgress();
   const [room, setRoom] = useState("kissa");
-  const [reveal, setReveal] = useState<Reveal | null>(null);
   const [dialogue, setDialogue] = useState<string | null>(null); // the keeper's realm id
   const [dexOpen, setDexOpen] = useState(false);
   const [mapOpen, setMapOpen] = useState(false);
@@ -300,7 +296,7 @@ export default function Bar({
   dialogueOpenRef.current = dialogue !== null;
   const escRef = useRef(false); // the Esc key closes a dialogue instead of paging it
   // gifts waiting to be handed over — shown one at a time, only once nothing
-  // else modal is open (a dig reveal, a keeper mid-sentence, a crate…)
+  // else modal is open (a keeper mid-sentence, a crate…)
   const [giftQueue, setGiftQueue] = useState<GiftItem[]>([]);
   const [dexTab, setDexTab] = useState<string | undefined>(undefined);
   const [unseenGifts, setUnseenGifts] = useState(0);
@@ -309,7 +305,7 @@ export default function Bar({
   const playingRef = useRef(false);
   const overlayOpenRef = useRef(false);
   const giftBlocked =
-    !started || doorPhase !== "gone" || crate !== null || ingestOpen || reveal !== null || dialogue !== null || dexOpen || mapOpen || fitOpen;
+    !started || doorPhase !== "gone" || crate !== null || ingestOpen || dialogue !== null || dexOpen || mapOpen || fitOpen;
   const giftShowing = !giftBlocked && giftQueue.length > 0 ? giftQueue[0] : null;
   const giftShowingRef = useRef(false);
   giftShowingRef.current = giftShowing !== null;
@@ -321,7 +317,7 @@ export default function Bar({
     if (giftKey) giftShownAtRef.current = performance.now();
   }, [giftKey]);
   overlayOpenRef.current =
-    crate !== null || ingestOpen || reveal !== null || dialogue !== null || dexOpen || mapOpen || giftShowing !== null;
+    crate !== null || ingestOpen || dialogue !== null || dexOpen || mapOpen || giftShowing !== null;
   const typingRef = useRef(false);
 
   // ----- dom + instance refs -----
@@ -391,8 +387,12 @@ export default function Bar({
       onDurationKnown: (sec) => presenceRef.current?.durationKnown(sec),
       // a dig preview ended — rejoin the room wherever it's got to by now
       onPreviewEnd: () => {
-        const s = latestRoomRef.current;
-        if (!s?.now) return;
+        const s = latestRoomRef.current ?? presenceRef.current?.currentRoom() ?? null;
+        if (!s?.now) {
+          // no room track known yet: never leave the preview running
+          playerRef.current?.silence();
+          return;
+        }
         playerRef.current?.rejoin(s.now, Math.max(0, (Date.now() - s.startedAt) / 1000));
         presenceRef.current?.notePlayed(s.startedAt);
       },
@@ -434,7 +434,6 @@ export default function Bar({
           }
           setCrate(null);
           setIngestOpen(false);
-          setReveal(null);
           setDialogue(null);
           setDexOpen(false);
           setMapOpen(false);
@@ -458,7 +457,6 @@ export default function Bar({
           gameRef.current.onArrive(roomId);
         },
         // the game layer — handlers live in gameRef so they always see fresh state
-        onDig: (roomId, idx) => gameRef.current.onDig(roomId, idx),
         onTalk: (roomId) => gameRef.current.onTalk(roomId),
         onSecret: (id, first) => gameRef.current.onSecret(id, first),
       },
@@ -684,9 +682,9 @@ export default function Bar({
   }, []);
 
   // ----- dig previews: hear 30s of the record you're looking at (Austin,
-  // 2026-09-29). Flipping a crate or turning up a dig plays it just for you;
+  // 2026-09-29). Flipping through a crate plays each record just for you;
   // close it and you're back in the room at its live spot.
-  const previewing = crate ? crate.shelf.records[crate.idx] : reveal?.kind === "record" ? reveal.track : null;
+  const previewing = crate ? crate.shelf.records[crate.idx] ?? null : null;
   useEffect(() => {
     if (previewing) playerRef.current?.startPreview(previewing, previewStart(previewing));
     else playerRef.current?.endPreview();
@@ -818,7 +816,7 @@ export default function Bar({
       if (firstRun)
         setTimeout(() => {
           if (!getProgress().talked.kissa)
-            gameRef.current.toast("Talk to Rio (!) — or click a glinting pile to dig", "hint", 7000);
+            gameRef.current.toast("Talk to Rio (!) — or open a crate and have a listen", "hint", 7000);
         }, 1750);
     };
   }, [later, openDoor]);
@@ -858,10 +856,16 @@ export default function Bar({
     },
     [toast]
   );
-  // the Sombra list: offered ONCE, after your first dig is put away (Austin: no
-  // pop-up barrage); always reachable from the menu and the fit panel after
+  // the Sombra list: offered ONCE, after you close your first crate (Austin: no
+  // pop-up barrage); always reachable from the menu and the fit panel after.
+  // Opening a crate also retires the first-run hint (they found the digging).
   useEffect(() => {
-    if (reveal || !listPendingRef.current) return;
+    if (crate) {
+      setToasts((t) => t.filter((x) => x.tone !== "hint"));
+      if (crate.shelf.records.length) listPendingRef.current = true;
+      return;
+    }
+    if (!listPendingRef.current) return;
     listPendingRef.current = false;
     let asked = false;
     try {
@@ -869,7 +873,7 @@ export default function Bar({
       localStorage.setItem(LIST_ASKED, "1");
     } catch {}
     if (!asked && memberNo) setTimeout(() => setListOpen(true), 700);
-  }, [reveal, memberNo]);
+  }, [crate, memberNo]);
 
   // your keys + list status, fresh each time the fit panel opens
   useEffect(() => {
@@ -894,7 +898,9 @@ export default function Bar({
     (t: Track, shelf: Shelf) => {
       const before = Object.keys(getProgress().dug).length;
       const res = markDug(t, shelf, shelf.room ?? "kissa", shelvesRef.current);
-      if (res.isNew) void scoreAction("keep", recordKey(t)).catch(() => {});
+      // keeping a record from a crate IS the crate digging (no piles since
+      // 2026-09-29): it scores as a dig on the weekly board
+      if (res.isNew) void scoreAction("dig", recordKey(t)).catch(() => {});
       if (res.badge) {
         void scoreAction("badge", res.badge).catch(() => {});
         toast(`🏅 Realm badge — ${REALMS[res.badge]?.name ?? res.badge}`, "gold", 5200);
@@ -930,7 +936,6 @@ export default function Bar({
 
   const gameRef = useRef<GameHandlers>({
     onArrive: noop,
-    onDig: noop,
     onTalk: noop,
     onSecret: noop,
     toast: noop,
@@ -948,27 +953,6 @@ export default function Bar({
         if (!touch) toast(`✦ New realm stamped — ${stamped}/${REALM_ORDER.length}`, "green");
         giftRef.current({ kind: "visit" }, REALMS[r]?.name ?? "the bar");
       }
-    },
-    onDig: (r) => {
-      setToasts((t) => t.filter((x) => x.tone !== "hint")); // they found the piles — hint done
-      const pick = pickDig(r, shelvesRef.current);
-      if (!pick) {
-        setReveal({ kind: "empty", room: r });
-        return;
-      }
-      const before = Object.keys(getProgress().dug).length;
-      const res = markDug(pick.track, pick.shelf, r, shelvesRef.current);
-      setReveal({ kind: "record", room: r, track: pick.track, shelf: pick.shelf, entry: res.entry, isNew: res.isNew });
-      void scoreAction("dig", recordKey(pick.track)).catch(() => {});
-      if (before === 0) listPendingRef.current = true; // their first dig: offer the list after
-      if (res.badge) {
-        void scoreAction("badge", res.badge).catch(() => {});
-        toast(`🏅 Realm badge — ${REALMS[res.badge]?.name ?? res.badge}`, "gold", 5200);
-        giftRef.current({ kind: "badge" }, REALMS[res.badge]?.keeper.name ?? "the bar");
-      }
-      if (res.isNew) titleCheck(before);
-      // the pile sometimes has something else in it (shown after the record)
-      giftRef.current({ kind: "dig" }, "the pile");
     },
     onTalk: (r) => {
       if (!REALMS[r]) return;
@@ -1020,7 +1004,7 @@ export default function Bar({
         dialogueAdvanceRef.current?.();
         return;
       }
-      const blocked = crate !== null || ingestOpen || reveal !== null || dialogue !== null || fitOpen;
+      const blocked = crate !== null || ingestOpen || dialogue !== null || fitOpen;
       if (k === "m" && !blocked) {
         setDexOpen(false);
         setMapOpen((o) => !o);
@@ -1037,7 +1021,7 @@ export default function Bar({
       removeEventListener("keydown", onEsc, true);
       removeEventListener("keydown", onKey);
     };
-  }, [crate, ingestOpen, reveal, dialogue, fitOpen, dexOpen, mapOpen, wander]);
+  }, [crate, ingestOpen, dialogue, fitOpen, dexOpen, mapOpen, wander]);
 
   // the arrival sign fades itself out
   useEffect(() => {
@@ -1269,7 +1253,7 @@ export default function Bar({
         <div id="hint">
           WASD · move &nbsp; ⇧ · sprint &nbsp; CLICK · anything
           <br />
-          E · dig · talk · browse &nbsp; M · map &nbsp; C · dex &nbsp; R · wander
+          E · talk · browse &nbsp; M · map &nbsp; C · dex &nbsp; R · wander
           <br />
           SPACE · mute me &nbsp; N · skip room &nbsp; V · view
         </div>
@@ -1332,15 +1316,6 @@ export default function Bar({
       {/* ----- the game layer ----- */}
       {banner && <ArrivalBanner banner={banner} />}
       <Toasts toasts={toasts} />
-      {reveal && (
-        <DigReveal
-          reveal={reveal}
-          flow={flowUi}
-          solo={soloMode}
-          onCue={cueTrack}
-          onClose={() => setReveal(null)}
-        />
-      )}
       {dialogue && (
         <Dialogue
           room={dialogue}
@@ -1550,7 +1525,7 @@ function MemberCard({ m, onOpenList }: { m: Membership; onOpenList: () => void }
   );
 }
 
-/** "Stay close to the room." The one ask: shown once after your first dig, and
+/** "Stay close to the room." The one ask: shown once after your first crate, and
  *  from the menu / fit panel after that. */
 function ListCard({
   memberNo,
@@ -1626,7 +1601,7 @@ function ListCard({
 
 /* ------------------------------------------------------------ dig preview */
 // "you're hearing this record, not the room" — with the seconds left and a way
-// straight back. Sits above the crate / dig overlays.
+// straight back. Sits above the crate overlay.
 function PreviewChip({
   preview,
   onStop,

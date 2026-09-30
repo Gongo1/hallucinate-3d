@@ -20,7 +20,7 @@ export interface FlowUi {
   cueWaitLeft: number;
 }
 
-const EMPTY: Progress = { visited: {}, seen: {}, dug: {}, secrets: {}, talked: {}, badges: {}, gifts: {}, giftMiss: 0 };
+const EMPTY: Progress = { visited: {}, seen: {}, dug: {}, secrets: {}, talked: {}, badges: {}, gifts: {} };
 
 /** Your dig (progress.ts), re-rendering on every change. Empty during SSR. */
 export function useProgress(): Progress {

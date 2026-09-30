@@ -81,3 +81,26 @@ export async function createMember(invitedBy: string | null): Promise<{ id: stri
   await mintKeys(data.id as string, STARTING_KEYS);
   return { id: data.id as string, number: data.number as number };
 }
+
+/** Fold a throwaway membership into another (a founding number being claimed
+ *  on a device that already knocked as someone else): its points and list
+ *  signup move over, its unused keys go, and the row is deleted unless someone
+ *  joined through it. Then the number sequence rewinds so no number is left
+ *  held by nobody. */
+export async function foldMember(fromId: string, toId: string): Promise<void> {
+  const sb = adminClient();
+  if (!sb || fromId === toId) return;
+  const { data: from } = await sb.from("hallu_members").select("number").eq("id", fromId).maybeSingle();
+  if (!from || (from.number as number) <= 2) return; // never fold a founding number away
+  await sb.from("hallu_events").update({ member_id: toId }).eq("member_id", fromId);
+  await sb.from("sombra_list").update({ member_id: toId }).eq("member_id", fromId);
+  await sb.from("hallu_keys").delete().eq("owner_id", fromId).is("redeemed_by", null);
+  const { count } = await sb
+    .from("hallu_members")
+    .select("id", { count: "exact", head: true })
+    .eq("invited_by", fromId);
+  if ((count ?? 0) > 0) return; // someone came in on its key: keep the row
+  await sb.from("hallu_keys").delete().eq("owner_id", fromId);
+  await sb.from("hallu_members").delete().eq("id", fromId);
+  await sb.rpc("hallu_rewind_numbers"); // no-op error if the function isn't installed yet
+}

@@ -1,5 +1,5 @@
 // GIFTS — you arrive in basic clothes; the bar gifts you things as you play.
-// Talk to a keeper, dig a pile, keep a record, bring new records, find a
+// Talk to a keeper, keep a record, bring new records, find a
 // secret, earn a badge → a gift: gear you can WEAR (shows on your 3D self for
 // everyone) or a KEEPSAKE, a knick-knack that tells you a bit more about what
 // Sombra is. Kept in your local save (progress.ts). Pure client state.
@@ -8,7 +8,7 @@
 // rooms keep attribution language.
 
 import type { Fit, Hat, Top, Neck, Eyes, Back } from "./fits";
-import { getProgress, markGift, setGiftMiss } from "./progress";
+import { getProgress, markGift } from "./progress";
 
 export type GiftSlot = "hat" | "top" | "neck" | "eyes" | "back";
 
@@ -99,7 +99,6 @@ const RESERVED = new Set([...Object.values(KEEPER_GIFT), INGEST_GIFT]);
 
 export type GiftTrigger =
   | { kind: "talk"; room: string }
-  | { kind: "dig" }
   | { kind: "keep" }
   | { kind: "ingest" }
   | { kind: "secret" }
@@ -109,15 +108,12 @@ export type GiftTrigger =
 /** chance a trigger turns up a random gift (talk/ingest have their own rules) */
 const CHANCE: Record<GiftTrigger["kind"], number> = {
   talk: 0,
-  dig: 0.4,
   keep: 0.2,
   ingest: 0.6,
   secret: 1,
   badge: 1,
   visit: 0.3,
 };
-/** a dig streak with no gift ends here — the next one is guaranteed */
-const PITY = 3;
 
 const owned = (id: string) => !!getProgress().gifts[id];
 
@@ -138,8 +134,8 @@ function draw(preferWear: boolean): Gift | null {
 /**
  * Something happened — maybe hand over a gift. Returns the gift you just got
  * (already saved), or null. Keepers always gift the first time you talk; your
- * first 新着 paste earns the USB; secrets + badges always gift; digs gift often,
- * with a pity guarantee so a dry streak never lasts.
+ * first 新着 paste earns the USB; secrets + badges always gift; keeps and
+ * first visits gift by chance.
  */
 export function rollGift(t: GiftTrigger): Gift | null {
   let g: Gift | null = null;
@@ -148,12 +144,6 @@ export function rollGift(t: GiftTrigger): Gift | null {
     if (id && !owned(id)) g = GIFT_BY_ID[id];
   } else if (t.kind === "ingest" && !owned(INGEST_GIFT)) {
     g = GIFT_BY_ID[INGEST_GIFT];
-  } else if (t.kind === "dig") {
-    const miss = getProgress().giftMiss ?? 0;
-    if (miss + 1 >= PITY || Math.random() < CHANCE.dig) {
-      g = draw(false);
-      setGiftMiss(0);
-    } else setGiftMiss(miss + 1);
   } else if (Math.random() < CHANCE[t.kind]) {
     g = draw(t.kind === "secret");
   }

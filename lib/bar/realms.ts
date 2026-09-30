@@ -1,5 +1,5 @@
 // THE REALMS — the game layer's data. Every room is a realm with its own lore,
-// a keeper who tells you how it connects to Sombra, and dig piles where records
+// a keeper who tells you how it connects to Sombra, and records
 // turn up. Secret passages stitch far-apart realms together.
 //
 // Pure data (positions in world px, same plan as layout.ts). NOTHING here touches
@@ -41,8 +41,6 @@ export interface Realm {
   /** accent colour (the door glow) */
   color: string;
   keeper: Keeper;
-  /** dig piles — open floor, off NPC paths, clear of every zone (geometry-checked) */
-  piles: { x: number; y: number }[];
   /** position on the world map (0..1 × 0..1) */
   map: { x: number; y: number };
 }
@@ -66,17 +64,13 @@ export const REALMS: Record<string, Realm> = {
       fit: fit("#cf9268", "#c0432f", "#1b1b22", "phones", { top: "sombra-tee", neck: "usb" }),
       lines: [
         "Hey — welcome to the Sombra Listening Room. The room never closes.",
-        "Right under the sign: the Gongo crate — Gongo's own sets, full length — and the Sombra Selection, the house picks.",
-        "This place is for digging. Every realm has crates, and piles of records buried in the corners. See the glinting mounds? Walk up and dig.",
-        "Anything you dig lands in your Crate Dex — press C. Some pressings are rare: first press, white label… and the odd test pressing.",
+        "Right under the sign: the Gongo crate — Gongo's own sets, full length — this week's fresh drop, and the Sombra Selection, the house picks.",
+        "This place is for digging. Every realm has crates: flip through one and you'll hear each record before you pick it.",
+        "Keep the ones you love and they land in your Crate Dex — press C. Some pressings are rare: first press, white label… and the odd test pressing.",
         "Doors lead to other realms — just walk through them. Press M for the map once you've been somewhere; you can jump straight back.",
         "And the lucky cat by the deck? Rub it and it'll send you somewhere random. Good luck, digger.",
       ],
     },
-    piles: [
-      { x: 780, y: 370 },
-      { x: 250, y: 380 },
-    ],
     map: { x: 0.5, y: 0.5 },
   },
   garden: {
@@ -100,10 +94,6 @@ export const REALMS: Record<string, Realm> = {
         "Up the path is the cosmos. Down the dunes, the beach. And past the tea room, people get lost in the hedges on purpose.",
       ],
     },
-    piles: [
-      { x: 300, y: 280 },
-      { x: 780, y: 650 },
-    ],
     map: { x: 0.5, y: 0.27 },
   },
   tearoom: {
@@ -127,10 +117,6 @@ export const REALMS: Record<string, Realm> = {
         "The hedge maze is just through the far door. Get lost. Something's waiting at the centre.",
       ],
     },
-    piles: [
-      { x: 860, y: 300 },
-      { x: 360, y: 560 },
-    ],
     map: { x: 0.2, y: 0.27 },
   },
   housemiam: {
@@ -157,10 +143,6 @@ export const REALMS: Record<string, Realm> = {
         "…and some say a pizza oven far below has a back door up here. Cats don't gossip. Mostly.",
       ],
     },
-    piles: [
-      { x: 900, y: 420 },
-      { x: 260, y: 400 },
-    ],
     map: { x: 0.5, y: 0.08 },
   },
   omakase: {
@@ -185,10 +167,6 @@ export const REALMS: Record<string, Realm> = {
         "Through the side door there's a vault of old records. The archivist knows things about Berlin nobody else does.",
       ],
     },
-    piles: [
-      { x: 180, y: 560 },
-      { x: 960, y: 560 },
-    ],
     map: { x: 0.64, y: 0.72 },
   },
   berlin: {
@@ -212,10 +190,6 @@ export const REALMS: Record<string, Realm> = {
         "Some nights the fog in the corner is thicker than it should be. Like something's underneath. I don't ask.",
       ],
     },
-    piles: [
-      { x: 150, y: 250 },
-      { x: 760, y: 690 },
-    ],
     map: { x: 0.36, y: 0.72 },
   },
   warehouse: {
@@ -239,10 +213,6 @@ export const REALMS: Record<string, Realm> = {
         "Stairs go up to the roof. The city looks good from up there.",
       ],
     },
-    piles: [
-      { x: 140, y: 700 },
-      { x: 700, y: 700 },
-    ],
     map: { x: 0.2, y: 0.88 },
   },
   playa: {
@@ -266,10 +236,6 @@ export const REALMS: Record<string, Realm> = {
         "Old lifeguard story: there's a hatch up by the dunes with a staircase that comes out on a rooftop across town. Never found it myself.",
       ],
     },
-    piles: [
-      { x: 180, y: 470 },
-      { x: 800, y: 595 },
-    ],
     map: { x: 0.8, y: 0.27 },
   },
   rooftop: {
@@ -293,10 +259,6 @@ export const REALMS: Record<string, Realm> = {
         "And if you smell salt air up here… follow it.",
       ],
     },
-    piles: [
-      { x: 150, y: 560 },
-      { x: 700, y: 680 },
-    ],
     map: { x: 0.07, y: 0.72 },
   },
   mattarello: {
@@ -320,10 +282,6 @@ export const REALMS: Record<string, Realm> = {
         "Between us: the oven has a back door. Where it goes… mira, just look near the oven.",
       ],
     },
-    piles: [
-      { x: 1000, y: 460 },
-      { x: 620, y: 650 },
-    ],
     map: { x: 0.92, y: 0.5 },
   },
   archive: {
@@ -347,10 +305,6 @@ export const REALMS: Record<string, Realm> = {
         "Try it. Then come back and tell me I'm wrong.",
       ],
     },
-    piles: [
-      { x: 900, y: 250 },
-      { x: 140, y: 560 },
-    ],
     map: { x: 0.5, y: 0.9 },
   },
   labyrinth: {
@@ -359,7 +313,7 @@ export const REALMS: Record<string, Realm> = {
     kanji: "迷路",
     tagline: "get lost · find the centre",
     lore: "A real hedge maze. Records that wander off from every realm end up in here.",
-    sombra: "The best records are found by getting lost. Dig the piles for strays from every realm — the one at the centre is the reward.",
+    sombra: "The best records are found by getting lost.",
     color: "#86b86a",
     keeper: {
       name: "Hana",
@@ -370,15 +324,10 @@ export const REALMS: Record<string, Realm> = {
       fit: fit("#f4cda3", "#7e9b5e", "#b0593a", "cap", { back: "tote" }),
       lines: [
         "Lost? Good. That's the idea.",
-        "Records wander off from the other rooms and end up in here. There's a pile at the very centre — follow the long corridor, then double back.",
-        "More piles in the dead ends — the maze rewards the stubborn.",
+        "Find the centre: follow the long corridor, then double back.",
+        "The maze rewards the stubborn.",
       ],
     },
-    piles: [
-      { x: 73, y: 74 },
-      { x: 973, y: 446 },
-      { x: 435, y: 447 }, // the centre of the maze — where the hidden crate used to sit
-    ],
     map: { x: 0.14, y: 0.5 },
   },
 };

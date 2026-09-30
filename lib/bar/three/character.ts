@@ -161,8 +161,6 @@ export interface CharState {
   playing: boolean;
   /** 0..1 walk speed scale (joystick tilt) */
   speed?: number;
-  /** crouched over a dig pile, arms working */
-  digging?: boolean;
   /** one arm up, waving hello */
   waving?: boolean;
   /** a one-shot dance move in progress (t = seconds since it started) */
@@ -192,7 +190,6 @@ export class Character {
   private yaw = 0;
   private walkAmt = 0; // 0 idle → 1 full stride (eased so starts/stops blend)
   private sitAmt = 0;
-  private digAmt = 0;
 
   constructor(fit: Fit, opts: { player?: boolean } = {}) {
     this.root.add(this.body);
@@ -596,7 +593,6 @@ export class Character {
     const k = Math.min(1, dt * 8);
     this.walkAmt += ((s.moving ? 1 : 0) - this.walkAmt) * k;
     this.sitAmt += ((s.sitting ? 1 : 0) - this.sitAmt) * k;
-    this.digAmt += ((s.digging ? 1 : 0) - this.digAmt) * Math.min(1, dt * 14);
     if (s.moving) this.phase += dt * (8.5 + 3 * (s.speed ?? 1));
 
     const w = this.walkAmt;
@@ -623,10 +619,6 @@ export class Character {
       aZ = 0.35;
     } else if (this.sitAmt > 0.5) {
       aL = aR = -0.55; // hands resting on the knees
-    } else if (this.digAmt > 0.3) {
-      // both hands in the pile, flipping records
-      aL = -1.3 + Math.sin(t * 22) * 0.45;
-      aR = -1.3 - Math.sin(t * 22) * 0.45;
     } else if (s.waving) {
       aR = -2.7;
       aZ = 0.2 + Math.sin(t * 9) * 0.35;
@@ -641,8 +633,7 @@ export class Character {
     const danceBounce = s.dancer && s.playing ? beat * 3.2 * idle : 0;
     const breathe = Math.sin(t * 2.1 + this.seed) * 0.35 * idle;
     this.body.position.y = bounce + danceBounce + breathe - this.sitAmt * (LEG - 3);
-    this.body.rotation.x = 0.09 * w + this.digAmt * 0.55; // lean into the stroll / the pile
-    this.body.position.y -= this.digAmt * 4;
+    this.body.rotation.x = 0.09 * w; // lean into the stroll
     this.body.rotation.z = s.dancer && s.playing ? Math.sin(t * Math.PI + this.seed) * 0.08 * idle : sw * 0.04 * w;
     this.torso.scale.set(1, 1 + Math.sin(t * 2.1 + this.seed) * 0.015, 1);
 

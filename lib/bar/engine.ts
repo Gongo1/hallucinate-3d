@@ -47,9 +47,8 @@ type Zone =
   | { type: "portal"; cx: number; cy: number; r: number }
   | { type: "goldrecord"; cx: number; cy: number; r: number; url: string; label?: string }
   | { type: "door"; cx: number; cy: number; r: number; door: RoomDoor }
-  // the game layer (lib/bar/realms.ts): dig piles, the realm's keeper, secret
-  // passages, and the Kissa's lucky cat
-  | { type: "pile"; cx: number; cy: number; r: number; idx: number }
+  // the game layer (lib/bar/realms.ts): the realm's keeper, secret passages,
+  // and the Kissa's lucky cat
   | { type: "keeper"; cx: number; cy: number; r: number }
   | { type: "secret"; cx: number; cy: number; r: number; id: string; name: string; to: string; spawn: { x: number; y: number } }
   | { type: "wander"; cx: number; cy: number; r: number };
@@ -96,9 +95,6 @@ export interface EngineCallbacks {
   onOpenExternal: (url: string) => void;
   /** the player moved to another venue room (scenery only — audio is unchanged) */
   onRoomChange: (roomId: string) => void;
-  /** a dig finished at pile `pileIdx` in `roomId` — the host picks + reveals a
-   *  record from that realm's crates (the engine never touches music) */
-  onDig?: (roomId: string, pileIdx: number) => void;
   /** talk to this realm's keeper */
   onTalk?: (roomId: string) => void;
   /** stepped into a secret passage (`firstTime` = just discovered it) */
@@ -119,9 +115,6 @@ interface EngineOpts {
 const VIEW_KEY = "hallucinate-view-v2";
 /** rave-portal pull-through charge length (ms) — explicit, cancelable intent */
 const PORTAL_CHARGE_MS = 800;
-/** how long a dig takes (s) and how long a pile rests before it can be dug again (ms) */
-const DIG_TIME = 0.8;
-const PILE_REST_MS = 40_000;
 /** pathfinding grid cell (world px) */
 const CELL = 16;
 const GW = Math.ceil(ROOM.w / CELL);
@@ -171,15 +164,13 @@ export class BarEngine {
   private keys: Record<string, boolean> = {};
   private moveTarget: { x: number; y: number } | null = null;
   // click-to-walk follows a path around fixtures (grid A*), and a click on a thing
-  // (crate, door, keeper, pile…) walks you there and uses it on arrival
+  // (crate, door, keeper, hatch…) walks you there and uses it on arrival
   private waypoints: { x: number; y: number }[] = [];
   private pendingZone: Zone | null = null;
   private stuck = { t: 0, x: 0, y: 0 };
   private grid: Uint8Array | null = null;
   private hover: PickRef | null = null;
   // the game layer — all client-local (your own save; see lib/bar/progress.ts)
-  private dig: { idx: number; t: number } | null = null;
-  private pileRest: Record<string, number> = {};
   private secretsFound = new Set<string>();
   private talked = new Set<string>();
   // the 💃 button: a one-shot move (walking cancels it)
@@ -280,7 +271,7 @@ export class BarEngine {
   /** Dance! A random house move — a different one each time — for two bars,
    *  then back to normal. Returns the move (the host broadcasts it). */
   dance(): DanceMove | null {
-    if (!this.started || this.transitioning() || this.dig) return null;
+    if (!this.started || this.transitioning()) return null;
     const options = DANCE_MOVES.filter((m) => m !== this.lastMove);
     const move = options[Math.floor(Math.random() * options.length)];
     this.lastMove = move;
@@ -511,12 +502,11 @@ export class BarEngine {
     }
   }
 
-  /** Dig piles, the keeper, secret hatches, the lucky cat (lib/bar/realms.ts).
-   *  Piles + hatches are flat (never solid); keepers + the cat are small solids. */
+  /** The keeper, secret hatches, the lucky cat (lib/bar/realms.ts). Hatches are
+   *  flat (never solid); keepers + the cat are small solids. */
   private buildGameZones() {
     const realm = REALMS[this.room.id];
     if (realm) {
-      realm.piles.forEach((p, idx) => this.zones.push({ type: "pile", cx: p.x, cy: p.y, r: 52, idx }));
       const k = realm.keeper;
       if (k.solid !== false && k.kind !== "cat") this.solid(k.x - 12, k.y - 12, 24, 24);
       const z = k.zone ?? { x: k.x, y: k.y };
@@ -539,10 +529,6 @@ export class BarEngine {
       this.solid(WANDER_CAT.x - 16, WANDER_CAT.y - 12, 32, 26);
       this.zones.push({ type: "wander", cx: WANDER_CAT.zone.x, cy: WANDER_CAT.zone.y, r: 56 });
     }
-  }
-
-  private pileReady(idx: number): boolean {
-    return performance.now() >= (this.pileRest[`${this.room.id}:${idx}`] ?? 0);
   }
 
   private buildKissaFixtures() {
@@ -765,7 +751,7 @@ export class BarEngine {
 
     this.onCanvasPointer = (e) => {
       if (this.cb.isOverlayOpen() || !this.started || this.transitioning()) return;
-      // click a THING (crate, door, keeper, pile, hatch…) → walk there and use it;
+      // click a THING (crate, door, keeper, hatch…) → walk there and use it;
       // click the floor → walk there. Either way the route goes around fixtures.
       const floor = this.view.screenToWorld(e.clientX, e.clientY);
       const z = this.zoneForPick(this.view.pick(e.clientX, e.clientY), floor);
@@ -838,7 +824,7 @@ export class BarEngine {
   }
 
   private interactZone(z: Zone) {
-    if (this.dig || this.transitioning()) return;
+    if (this.transitioning()) return;
     if (z.type === "shelf") {
       if (z.shelf.data.ingest) this.cb.onOpenIngest();
       else this.cb.onBrowseShelf(z.shelf.data);
@@ -857,11 +843,6 @@ export class BarEngine {
       if (z.url) this.cb.onOpenExternal(z.url);
     } else if (z.type === "door") {
       this.beginDoor(z.door.to);
-    } else if (z.type === "pile") {
-      // dig! the player crouches for DIG_TIME, then the host reveals a record
-      if (!this.pileReady(z.idx)) return;
-      this.dig = { idx: z.idx, t: 0 };
-      this.stopWalking();
     } else if (z.type === "keeper") {
       this.cb.onTalk?.(this.room.id);
     } else if (z.type === "secret") {
@@ -908,7 +889,6 @@ export class BarEngine {
         if (z.type !== pick.kind) return false;
         if (z.type === "shelf") return z.shelf.data.id === pick.id;
         if (z.type === "door") return z.door.to === pick.id;
-        if (z.type === "pile") return String(z.idx) === pick.id;
         if (z.type === "secret") return z.id === pick.id;
         return true;
       });
@@ -1109,22 +1089,13 @@ export class BarEngine {
       this.updatePrompt();
       return;
     }
-    // while typing in chat, mid-room-transition, or mid-dig, freeze the avatar
-    // (keep the world alive). Transition freeze stops drifting through new walls.
-    if (this.cb.isTyping() || this.transitioning() || this.dig) {
+    // while typing in chat or mid-room-transition, freeze the avatar (keep the
+    // world alive). Transition freeze stops drifting through new walls.
+    if (this.cb.isTyping() || this.transitioning()) {
       this.keys = {};
       this.stopWalking();
       this.stickVec = { x: 0, y: 0 };
       this.playerMoving = false;
-    }
-    if (this.dig) {
-      this.dig.t += dt;
-      if (this.dig.t >= DIG_TIME) {
-        const idx = this.dig.idx;
-        this.dig = null;
-        this.pileRest[`${this.room.id}:${idx}`] = performance.now() + PILE_REST_MS;
-        this.cb.onDig?.(this.room.id, idx);
-      }
     }
     let ix = 0;
     let iy = 0;
@@ -1251,7 +1222,6 @@ export class BarEngine {
     this.player.x = sp.x;
     this.player.y = sp.y;
     this.stopWalking();
-    this.dig = null;
     this.activeZone = null;
     this.lastPrompt = null;
     this.cb.onPrompt(null);
@@ -1437,10 +1407,6 @@ export class BarEngine {
         const l = best.door.label;
         s = /^(back|down|up|to)\b/.test(l) ? `Head <b>${l}</b>` : `Step through to <b>${l}</b>`;
       }
-      if (best.type === "pile") {
-        const left = Math.ceil(((this.pileRest[`${this.room.id}:${best.idx}`] ?? 0) - performance.now()) / 1000);
-        s = this.dig ? `Digging…` : left > 0 ? `Dug out — more turns up in <b>${left}s</b>` : `Dig through the pile <b>✦</b>`;
-      }
       if (best.type === "keeper") {
         const k = REALMS[this.room.id]?.keeper;
         s = k ? `Talk to <b>${k.name}</b> · ${k.title}` : "";
@@ -1464,7 +1430,7 @@ export class BarEngine {
   private render(dt: number) {
     const moving = this.playerMoving;
     const actors: Actor[] = [
-      { id: "player", x: this.player.x, y: this.player.y, fit: this.playerFit, moving, player: true, digging: !!this.dig, dance: this.danceNow() },
+      { id: "player", x: this.player.x, y: this.player.y, fit: this.playerFit, moving, player: true, dance: this.danceNow() },
       ...this.npcs.map((n, i) => ({
         id: `npc:${this.room.id}:${i}`,
         x: n.x,
@@ -1512,8 +1478,6 @@ export class BarEngine {
       speed: (Math.hypot(this.stickVec.x, this.stickVec.y) || 1) * (this.keys["shift"] ? 1.5 : 1),
       game: {
         realm: this.room.id,
-        piles: (REALMS[this.room.id]?.piles ?? []).map((_, i) => ({ ready: this.pileReady(i) })),
-        dig: this.dig ? { idx: this.dig.idx, t: this.dig.t / DIG_TIME } : null,
         secretsFound: [...this.secretsFound],
         talked: this.talked.has(this.room.id),
         hover: this.hover,
@@ -1538,7 +1502,6 @@ export class BarEngine {
     if (!z) return null;
     if (z.type === "shelf") return { type: "shelf", id: z.shelf.data.id };
     if (z.type === "door") return { type: "door", to: z.door.to };
-    if (z.type === "pile") return { type: "pile", idx: z.idx };
     if (z.type === "secret") return { type: "secret", id: z.id };
     return { type: z.type };
   }

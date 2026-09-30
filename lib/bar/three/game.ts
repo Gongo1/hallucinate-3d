@@ -1,11 +1,11 @@
 import * as THREE from "three";
 import { REALMS, WANDER_CAT, secretsIn } from "../realms";
-import { box, cyl, lump, mat, ownMat, glowMat, glowPool, halo, billboard, motes, rr, rng, shade } from "./kit";
+import { box, cyl, mat, ownMat, glowMat, glowPool, halo, billboard, motes, rr } from "./kit";
 import { CHAR_SCALE } from "./character";
 import type { FrameInfo, GameFrame, PickRef } from "./types";
 
-// The game layer drawn over any realm: dig piles (glinting mounds of records),
-// the keeper's speech bubble, secret hatches, and the Kissa's lucky cat. Built
+// The game layer drawn over any realm: the keeper's speech bubble, secret
+// hatches, and the Kissa's lucky cat. Built
 // from lib/bar/realms.ts; animated from the engine's GameFrame each frame.
 
 export interface GameLayer {
@@ -20,167 +20,11 @@ const tag = <T extends THREE.Object3D>(o: T, pick: PickRef): T => {
   return o;
 };
 
-const PILE_R = 26;
-
-// a soft vertical fade (opaque at the floor → clear up high) for the loot beams
-let beamTex: THREE.Texture | null = null;
-function beamTexture(): THREE.Texture {
-  if (beamTex) return beamTex;
-  const c = document.createElement("canvas");
-  c.width = 4;
-  c.height = 64;
-  const x = c.getContext("2d")!;
-  const gr = x.createLinearGradient(0, 0, 0, 64);
-  gr.addColorStop(0, "rgba(255,255,255,0)");
-  gr.addColorStop(0.7, "rgba(255,255,255,.35)");
-  gr.addColorStop(1, "rgba(255,255,255,.8)");
-  x.fillStyle = gr;
-  x.fillRect(0, 0, 4, 64);
-  beamTex = new THREE.CanvasTexture(c);
-  beamTex.colorSpace = THREE.SRGBColorSpace;
-  beamTex.userData.cached = true;
-  return beamTex;
-}
-
 export function buildGameLayer(roomId: string): GameLayer {
   const g = new THREE.Group();
   const pickables: THREE.Object3D[] = [];
   const anim: ((f: FrameInfo, gf: GameFrame) => void)[] = [];
   const realm = REALMS[roomId];
-  const R = rng(roomId.length * 131 + 7);
-
-  /* ---------------- dig piles */
-  realm?.piles.forEach((p, idx) => {
-    const pile = new THREE.Group();
-    pile.position.set(p.x, 0, p.y);
-    // a mound of earth + dust with records jutting out at angles
-    const dirt = lump(PILE_R, "#6b4a2e", 90 + idx * 7 + roomId.length, 0.3, 1, 0.42, 1, 1);
-    dirt.material = ownMat("#6b4a2e"); // own material — its colour dims while the pile rests
-    dirt.position.y = 2;
-    pile.add(dirt);
-    const cols = [realm.color, "#1a1410", shade(realm.color, -50), "#e8dcc4"];
-    const recs = new THREE.Group();
-    for (let i = 0; i < 5; i++) {
-      const sleeve = box(22, 22, 1.6, cols[i % cols.length]);
-      const a = (i / 5) * Math.PI * 2 + R();
-      sleeve.position.set(Math.cos(a) * 9, 8, Math.sin(a) * 7);
-      sleeve.rotation.set(-0.5 + R() * 0.4, a, (R() - 0.5) * 0.9);
-      recs.add(sleeve);
-    }
-    const disc = new THREE.Mesh(new THREE.CylinderGeometry(11, 11, 1.2, 18), mat("#0c0c0e"));
-    disc.position.set(4, 16, -3);
-    disc.rotation.set(1.1, 0, 0.4);
-    const lbl = new THREE.Mesh(new THREE.CylinderGeometry(3.5, 3.5, 1.4, 10), mat(realm.color));
-    lbl.position.copy(disc.position);
-    lbl.rotation.copy(disc.rotation);
-    recs.add(disc, lbl);
-    pile.add(recs);
-    // the glint: a star that turns above the mound while it's ready to dig
-    const star = new THREE.Group();
-    const starM = glowMat("#ffe9a0", 1, true);
-    for (const rz of [0, Math.PI / 2]) {
-      const ray = new THREE.Mesh(new THREE.OctahedronGeometry(1, 0), starM);
-      ray.scale.set(2, 9, 2);
-      ray.rotation.z = rz;
-      star.add(ray);
-    }
-    const starHalo = halo(46, "#ffd76a", 0.55);
-    star.add(starHalo);
-    star.position.y = 46;
-    pile.add(star);
-    const sparkle = motes(8, "#ffe6a0", 6, 0.9);
-    pile.add(sparkle);
-    // a loot beam: readable from across the room, in any light
-    const beamM = new THREE.MeshBasicMaterial({
-      map: beamTexture(),
-      color: new THREE.Color("#ffd98a"),
-      transparent: true,
-      opacity: 0.55,
-      depthWrite: false,
-      side: THREE.DoubleSide,
-      blending: THREE.AdditiveBlending,
-      fog: false,
-    });
-    const beam = new THREE.Mesh(new THREE.CylinderGeometry(9, 17, 150, 12, 1, true), beamM);
-    beam.position.y = 75;
-    beam.renderOrder = 3;
-    pile.add(beam);
-    const ring = glowPool(0, 0, 58, realm.color, 0.35, 0.9);
-    ring.position.set(0, 0.9, 0);
-    pile.add(ring);
-    // dig dust + the record that pops out when the dig lands
-    const dust = motes(18, "#d8c4a0", 9, 0);
-    pile.add(dust);
-    const popDisc = new THREE.Group();
-    const pd = new THREE.Mesh(new THREE.CylinderGeometry(12, 12, 1.4, 20), mat("#0c0c0e"));
-    const pl = new THREE.Mesh(new THREE.CylinderGeometry(4, 4, 1.6, 12), ownMat(realm.color, { emissive: realm.color, glow: 0.6 }));
-    popDisc.add(pd, pl);
-    popDisc.rotation.x = Math.PI / 2;
-    popDisc.visible = false;
-    pile.add(popDisc);
-    const hit = new THREE.Mesh(new THREE.CylinderGeometry(PILE_R + 6, PILE_R + 6, 30, 8), new THREE.MeshBasicMaterial({ visible: false }));
-    hit.position.y = 15;
-    pile.add(hit);
-    tag(pile, { kind: "pile", id: String(idx) });
-    pickables.push(pile);
-    g.add(pile);
-
-    const sp = Array.from({ length: 8 }, (_, i) => ({ a: i * 0.8, r: 14 + (i % 3) * 8, h: 8 + (i % 4) * 9, s: 0.8 + (i % 3) * 0.4 }));
-    const dp = Array.from({ length: 18 }, (_, i) => ({ a: (i / 18) * Math.PI * 2, v: 30 + (i % 5) * 12, up: 20 + (i % 4) * 14 }));
-    let lastDig = 0; // 0..1 dig progress seen last frame
-    let pop = -1; // seconds since the record popped (−1 = idle)
-    anim.push((f, gf) => {
-      const ready = gf.piles[idx]?.ready ?? true;
-      const digging = gf.dig?.idx === idx ? gf.dig.t : 0;
-      const on =
-        (f.active?.type === "pile" && f.active.idx === idx) ||
-        (gf.hover?.kind === "pile" && gf.hover.id === String(idx));
-      // resting piles go quiet (no glint), ready ones sparkle
-      star.visible = ready && !digging;
-      beam.visible = ready && !digging;
-      beamM.opacity = (on ? 0.75 : 0.4) + 0.15 * Math.sin(f.t * 2.4 + idx);
-      star.rotation.y = f.t * 1.6;
-      star.position.y = 44 + Math.sin(f.t * 2.2 + idx) * 3;
-      starM.opacity = 0.75 + 0.25 * Math.sin(f.t * 5 + idx);
-      (sparkle.material as THREE.PointsMaterial).opacity = ready ? 0.9 : 0;
-      const spos = sparkle.geometry.attributes.position as THREE.BufferAttribute;
-      sp.forEach((s, i) => {
-        const a = s.a + f.t * s.s;
-        spos.setXYZ(i, Math.cos(a) * s.r, s.h + Math.sin(f.t * 2 + i) * 4, Math.sin(a) * s.r);
-      });
-      spos.needsUpdate = true;
-      const rm = ring.material as THREE.MeshBasicMaterial;
-      rm.opacity = !ready ? 0.08 : on ? 0.6 + 0.2 * Math.sin(f.t * 6) : 0.28 + 0.08 * Math.sin(f.t * 2 + idx);
-      ring.scale.setScalar(on && ready ? 1.2 : 1);
-      (dirt.material as THREE.MeshLambertMaterial).color.set(ready ? "#6b4a2e" : "#4a3a2c");
-      // the dig itself: the mound shudders, dust flies
-      const dm = dust.material as THREE.PointsMaterial;
-      if (digging > 0) {
-        pile.position.x = p.x + Math.sin(f.t * 60) * 1.5;
-        recs.rotation.y += f.dt * 6;
-        dm.opacity = 0.8;
-        const dpos = dust.geometry.attributes.position as THREE.BufferAttribute;
-        dp.forEach((d, i) => {
-          const k = (digging * 2 + i / 18) % 1;
-          dpos.setXYZ(i, Math.cos(d.a) * d.v * k, 4 + d.up * k * (1 - k) * 3, Math.sin(d.a) * d.v * k);
-        });
-        dpos.needsUpdate = true;
-      } else {
-        pile.position.x = p.x;
-        dm.opacity = Math.max(0, dm.opacity - f.dt * 3);
-      }
-      // the moment the dig lands: a record spins up out of the pile
-      if (lastDig > 0 && digging === 0) pop = 0;
-      lastDig = digging;
-      if (pop >= 0) {
-        pop += f.dt;
-        popDisc.visible = pop < 1.1;
-        popDisc.position.y = 20 + pop * 110 - pop * pop * 70;
-        popDisc.rotation.z = pop * 14;
-        if (pop >= 1.1) pop = -1;
-      }
-    });
-  });
 
   /* ---------------- the keeper's speech bubble (+ name on hover) */
   if (realm) {

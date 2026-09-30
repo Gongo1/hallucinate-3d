@@ -29,8 +29,6 @@ export interface Actor {
   player?: boolean;
   /** clickable (keepers) */
   pick?: PickRef;
-  /** mid-dig: crouched, arms working the pile */
-  digging?: boolean;
   /** a dance move in progress (t = seconds since it started) */
   dance?: { move: DanceMove; t: number };
 }
@@ -128,7 +126,7 @@ export class World3D {
   private roomDef: RoomDef | null = null;
   private dancers = false;
   private game: GameLayer | null = null;
-  /** everything clickable in the current room (crates, doors, keepers, piles…) */
+  /** everything clickable in the current room (crates, doors, keepers, hatches…) */
   private pickables: THREE.Object3D[] = [];
 
   private W = 1;
@@ -550,7 +548,6 @@ export class World3D {
         dancer: this.dancers && !a.player && !keeper && !a.id.startsWith("r:"),
         playing: s.playing,
         speed: a.player ? s.speed : 1,
-        digging: a.digging,
         // keepers you haven't met wave you over
         waving: near && !s.game.talked,
         dance: a.dance,

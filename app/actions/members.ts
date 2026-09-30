@@ -8,7 +8,7 @@ import {
   mintMemberCookie,
   readMemberCookie,
 } from "@/lib/members/auth";
-import { adminClient, createMember, keyInfo, memberNumber, mintKeys, redeemKey } from "@/lib/members/store";
+import { adminClient, createMember, foldMember, keyInfo, memberNumber, mintKeys, redeemKey } from "@/lib/members/store";
 import { POINTS, type ScoreKind } from "@/lib/members/tag";
 import { weekKey } from "@/lib/bar/week";
 
@@ -42,14 +42,29 @@ export type KnockResult = {
 };
 
 /** Called right after the knock (never awaited before audio): who is this? A
- *  returning member is recognised; a waiting /k/ key is redeemed; anyone else
- *  gets the next number. */
+ *  hand-off link takes over this device; else a returning member is
+ *  recognised; else a waiting invite is redeemed and the next number handed out. */
 export async function knockIn(): Promise<KnockResult | null> {
   const sb = adminClient();
   if (!sb) return null;
   const jar = await cookies();
 
   const known = await currentMemberId();
+
+  // A hand-off link (#002 → Paula) wins even over an existing membership: if
+  // this phone already knocked as someone else, that number folds into it.
+  const waiting = jar.get(KEY_COOKIE)?.value;
+  const handoff = waiting ? await keyInfo(waiting) : null;
+  if (waiting && handoff?.claims && (await redeemKey(waiting, handoff.claims))) {
+    jar.delete(KEY_COOKIE);
+    const n = await memberNumber(handoff.claims);
+    if (n !== null) {
+      if (known && known !== handoff.claims) await foldMember(known, handoff.claims);
+      await setMemberCookie(handoff.claims);
+      return { number: n, isNew: false, handoff: true };
+    }
+  }
+
   if (known) {
     const n = await memberNumber(known);
     if (n !== null) {
@@ -59,17 +74,10 @@ export async function knockIn(): Promise<KnockResult | null> {
     }
   }
 
+  // an ordinary invite (hand-offs were handled above)
   const code = jar.get(KEY_COOKIE)?.value;
   jar.delete(KEY_COOKIE);
   const key = code ? await keyInfo(code) : null;
-
-  if (key?.claims && code && (await redeemKey(code, key.claims))) {
-    const n = await memberNumber(key.claims);
-    if (n !== null) {
-      await setMemberCookie(key.claims);
-      return { number: n, isNew: false, handoff: true };
-    }
-  }
 
   const m = await createMember(key?.ownerId ?? null);
   if (!m) return null;
