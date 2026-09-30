@@ -29,3 +29,9 @@ Run the dev server with `SUPABASE_SERVICE_ROLE_KEY` in the process env (pulled t
 - `hallu_rewind_numbers()` (migration `20260930b_number_fold.sql`, installed) then sets the sequence to max(number)+1, so no number is left held by nobody.
 - **Hand-off keys take priority over an existing membership** in `knockIn`, and the door shows "#002 is waiting for you" even to a member.
 - **Real members as of 2026-09-29:** #003 (Gongo's phone, to be folded into #001) and #004 (unknown: Gongo's other device, or Paula?).
+
+## The weekly board (03951ae)
+- **Whiteboard:** chalk on slate on the Listening Room's back wall, left of the sign (`KISSA_BOARD`). The kissa builder draws the top 3 diggers (records kept) and top 3 trinket collectors, and `RoomView.setBoard` redraws it via `engine.setBoard` → `world.setBoard` (view-only; world keeps the last board across room swaps).
+- **Walk up + E** (zone `board`) → `BoardOverlay`: top 10 of each, your row highlighted, your overall place + points, the scoring legend, and the reset time.
+- **The master** (pour-over `bar` zone) → `MasterTalk`: who's been digging all week, who's carrying the most trinkets, where you stand, when it's wiped. "Pour me a pick" keeps the old skip.
+- **Data:** `weekBoard()` = `hallu_board(weekKey())` top 20 by score + your own row. Refreshed once you're inside and every 60s. The board resets on the drop-week boundary (Friday 17:00 UTC).
