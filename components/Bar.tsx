@@ -59,6 +59,17 @@ import { Dex, STASH } from "@/components/game/Dex";
 import { GiftCard, type GiftItem } from "@/components/game/GiftCard";
 import { WorldMap } from "@/components/game/WorldMap";
 import { ArrivalBanner, Toasts, type Banner, type Toast } from "@/components/game/Hud";
+import { Door, type DoorPhase } from "@/components/game/Door";
+import * as sfx from "@/lib/bar/sfx";
+
+// The door ritual's timing (ms from the knock). Spec:
+// KB/Sombra/outputs/html/2026-09-29-hallucinate-door-ritual.html
+const ARRIVAL = {
+  first: { knocks: 2, slideAt: 650, slide: 1200, dolly: 1600, chromeAt: 1850, bed: true },
+  back: { knocks: 1, slideAt: 200, slide: 700, dolly: 800, chromeAt: 900, bed: false },
+} as const;
+const GATE_MAX_MS = 2500; // never hold the door longer than this after the knock
+const DOLLY_FROM = 1.35; // the camera waits this much farther back behind the door
 
 /** one row on the live "Added" board */
 interface AddedRow {
@@ -180,6 +191,24 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
   // ----- UI state -----
   const [started, setStarted] = useState(false);
   const startedRef = useRef(false); // read inside presence callbacks
+  // ----- the door ritual -----
+  const [doorPhase, setDoorPhase] = useState<DoorPhase>("shut");
+  const doorPhaseRef = useRef<DoorPhase>("shut");
+  doorPhaseRef.current = doorPhase;
+  const [doorSlideMs, setDoorSlideMs] = useState<number>(ARRIVAL.first.slide);
+  // the in-room chrome waits behind the door, then fades in one piece at a time
+  const [chrome, setChrome] = useState<"" | "hidden" | "in">("");
+  // door copy inputs, all client-only (read after mount — no hydration mismatch)
+  const [rosterKnown, setRosterKnown] = useState(false);
+  const [phaseLabel, setPhaseLabel] = useState<string | null>(null);
+  const [returning, setReturning] = useState(false);
+  const sceneReadyRef = useRef(false); // the 3D room has drawn behind the door
+  const rosterKnownRef = useRef(false);
+  const othersRef = useRef(0); // listeners already inside, counted while lurking
+  const arrivalTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  // runs once, as the interface comes in (the realm banner waits for the reveal)
+  const onInsideRef = useRef<(() => void) | null>(null);
+  const reducedMotion = useRef(false);
   const [prompt, setPrompt] = useState<string | null>(null);
   const [np, setNp] = useState<PlayerState>(EMPTY_NP);
   const [crate, setCrate] = useState<CrateState | null>(null);
@@ -253,7 +282,7 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
   const playingRef = useRef(false);
   const overlayOpenRef = useRef(false);
   const giftBlocked =
-    !started || crate !== null || ingestOpen || reveal !== null || dialogue !== null || dexOpen || mapOpen || fitOpen;
+    !started || doorPhase !== "gone" || crate !== null || ingestOpen || reveal !== null || dialogue !== null || dexOpen || mapOpen || fitOpen;
   const giftShowing = !giftBlocked && giftQueue.length > 0 ? giftQueue[0] : null;
   const giftShowingRef = useRef(false);
   giftShowingRef.current = giftShowing !== null;
@@ -426,6 +455,19 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
     engine.setSecretsFound(Object.keys(saved.secrets));
     engine.setTalked(Object.keys(saved.talked));
 
+    // the door: regulars get the short ritual; the camera waits back behind the
+    // door (no dolly when the viewer asked for reduced motion); the door opens
+    // only once the room has actually drawn behind it
+    setReturning(Object.keys(saved.visited).length > 0);
+    setPhaseLabel(phaseAt(Date.now()).label);
+    reducedMotion.current = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (!reducedMotion.current) engine.setArrival(DOLLY_FROM);
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        sceneReadyRef.current = true;
+      })
+    );
+
     // Join the lobby channel immediately, but only LURKING (not tracked as
     // present, so no ghost listeners): by the time the user taps to enter, the
     // current track + offset are already known and playable in-gesture.
@@ -438,7 +480,13 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           : undefined,
       getPose: () =>
         engineRef.current?.getPlayerPose() ?? { x: 570, y: 470, dir: 1 },
-      onRoster: (n) => setRoster(n),
+      onRoster: (n) => {
+        setRoster(n);
+        // while still at the door we're only lurking, so n = the people inside
+        if (!startedRef.current) othersRef.current = n;
+        rosterKnownRef.current = true;
+        setRosterKnown(true);
+      },
       onChat: (m) =>
         setChat((c) => {
           const next = [...c, m].slice(-7);
@@ -572,15 +620,70 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
   // activation) so the playStation below runs INSIDE the gesture. That's what
   // lets iPhones start the sound: mobile browsers only allow audio that begins
   // synchronously in a real tap.
+  //
+  // The knock also runs the door ritual (knock → ready gate → slide → swell).
+  // Timing lives in ARRIVAL; a second tap mid-ritual skips to the end.
+  const later = useCallback((ms: number, fn: () => void) => {
+    arrivalTimers.current.push(setTimeout(fn, ms));
+  }, []);
+  const clearArrival = useCallback(() => {
+    arrivalTimers.current.forEach(clearTimeout);
+    arrivalTimers.current = [];
+  }, []);
+
+  // a ritual in flight when the bar unmounts shouldn't fire into a dead tree
+  useEffect(() => clearArrival, [clearArrival]);
+
+  /** Slide the door open and hand over to the room. `fast` = the skip tap. */
+  const openDoor = useCallback(
+    (t: (typeof ARRIVAL)["first" | "back"], fast: boolean) => {
+      clearArrival();
+      const reduce = reducedMotion.current;
+      const slideMs = fast ? 250 : reduce ? 400 : t.slide;
+      const dollyMs = fast ? 250 : reduce ? 0 : t.dolly;
+      setDoorSlideMs(slideMs);
+      setDoorPhase("open");
+      if (!fast && !reduce) sfx.slide(t.slide);
+      sfx.bedStop(fast ? 200 : 1000);
+      playerRef.current?.swell(fast ? 250 : t.dolly);
+      engineRef.current?.setArrival(1, dollyMs);
+      // the interface follows the door in (CSS staggers the pieces)
+      const chromeIn = fast ? 0 : Math.max(0, t.chromeAt - t.slideAt);
+      later(chromeIn, () => {
+        setChrome("in");
+        onInsideRef.current?.();
+        onInsideRef.current = null;
+      });
+      later(slideMs + 50, () => setDoorPhase("gone"));
+      later(chromeIn + 1000, () => setChrome(""));
+    },
+    [clearArrival, later]
+  );
+
   const enter = useCallback(() => {
-    if (startedRef.current) return;
+    if (startedRef.current) {
+      // tapped again mid-ritual: regulars shouldn't have to wait
+      const ph = doorPhaseRef.current;
+      if (ph === "knock" || ph === "hold") openDoor(ARRIVAL.first, true);
+      else if (ph === "open") {
+        setDoorPhase("gone");
+        setChrome("in");
+        onInsideRef.current?.();
+        onInsideRef.current = null;
+      }
+      return;
+    }
     startedRef.current = true;
     setStarted(true);
+    setChrome("hidden"); // same render as `started`, so no chrome flashes in early
     engineRef.current?.start();
 
     const player = playerRef.current;
     const p = presenceRef.current;
     const s = latestRoomRef.current ?? p?.currentRoom() ?? null;
+    // the room is heard "through the wall" until the door opens (desktop; iOS
+    // ignores volume, so there the track simply arrives as the panels part)
+    player?.holdLow(12);
     if (player && s?.now) {
       // the lurk phase already learned the room's track — join it in-gesture
       const offset = Math.max(0, (Date.now() - s.startedAt) / 1000);
@@ -601,15 +704,41 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
     // become a live character others can see (lurker → listener)
     p?.materialize();
 
-    // stamp the hub; first-timers get pointed at the scout
+    // ----- the ritual (everything audible above already started in-gesture) -----
     const firstRun = Object.keys(getProgress().visited).length === 0;
-    gameRef.current.onArrive("kissa");
-    if (firstRun)
-      setTimeout(() => {
-        if (!getProgress().talked.kissa)
-          gameRef.current.toast("Talk to Rio (!) — or click a glinting pile to dig", "hint", 7000);
-      }, 3600);
-  }, []);
+    const t = firstRun ? ARRIVAL.first : ARRIVAL.back;
+    sfx.unlock(); // still inside the click, so the door's own sounds may play
+    sfx.knock(t.knocks);
+    if (t.bed) later(200, () => sfx.bedStart());
+    setDoorPhase("knock");
+
+    // ready gate: the room has drawn, we know who's inside, and — if anyone is —
+    // their track has arrived. Never hold past GATE_MAX_MS.
+    const tapAt = performance.now();
+    const ready = () =>
+      sceneReadyRef.current &&
+      rosterKnownRef.current &&
+      (othersRef.current === 0 || latestRoomRef.current !== null);
+    const gate = () => {
+      if (ready() || performance.now() - tapAt >= GATE_MAX_MS) openDoor(t, false);
+      else {
+        if (doorPhaseRef.current !== "hold") setDoorPhase("hold");
+        later(50, gate);
+      }
+    };
+    later(t.slideAt, gate);
+
+    // once inside: stamp the hub (its banner lands with the interface, not
+    // behind the door); first-timers get pointed at the scout
+    onInsideRef.current = () => {
+      gameRef.current.onArrive("kissa");
+      if (firstRun)
+        setTimeout(() => {
+          if (!getProgress().talked.kissa)
+            gameRef.current.toast("Talk to Rio (!) — or click a glinting pile to dig", "hint", 7000);
+        }, 1750);
+    };
+  }, [later, openDoor]);
 
   // the tap-to-listen pill: restart blocked audio inside a fresh tap, re-seeking
   // to wherever the room is NOW (it kept moving while this client sat muted)
@@ -873,8 +1002,31 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
   const myColor = presenceRef.current?.color;
   const soloMode = roster <= 1;
 
+  // the door's copy — real numbers only. While lurking, roster = the people
+  // inside; after the knock it would count you too, so freeze it there.
+  const inside = started ? othersRef.current : roster;
+  const doorLive = !rosterKnown
+    ? null
+    : onAir.live
+      ? `ON AIR · ${inside} inside`
+      : inside === 0
+        ? `Empty right now${phaseLabel ? ` · ${phaseLabel}` : ""}`
+        : `${inside} inside${phaseLabel ? ` · ${phaseLabel}` : ""}`;
+  const doorLine = onAir.live
+    ? onAir.dj
+      ? `${onAir.dj} is spinning`
+      : "Live from the booth"
+    : rosterKnown && inside === 0
+      ? "The room is yours"
+      : returning
+        ? "Welcome back"
+        : null;
+  const wrapClass = [dialogue ? "dlgOpen" : "", chrome ? `chrome-${chrome}` : ""]
+    .filter(Boolean)
+    .join(" ");
+
   return (
-    <div id="wrap" className={dialogue ? "dlgOpen" : ""}>
+    <div id="wrap" className={wrapClass}>
       <canvas ref={canvasRef} id="c" />
 
       <div id="topbar" className={menuOpen ? "open" : ""}>
@@ -890,7 +1042,11 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           {!menuOpen && unseenGifts > 0 && <span className="giftDotMenu">🎁</span>}
         </button>
         {started && <VenueClock engineRef={engineRef} />}
-        {started && roster > 0 && <RosterPill real={roster} />}
+        {started && roster > 0 && (
+          <div id="roster" title="listeners in the bar right now">
+            ☕ {roster} {roster === 1 ? "listener" : "listeners"}
+          </div>
+        )}
         {started && (
           <button
             id="addedBtn"
@@ -1169,52 +1325,20 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
         </button>
       )}
 
-      {/* onClick, NOT pointerdown: on touch only click carries the user
-          activation that lets the in-gesture playStation make sound */}
-      <div id="intro" className={started ? "gone" : ""} onClick={enter}>
-        <div className="glow" />
-        <div id="introInner">
-          <div id="presents">☉☽ &nbsp;SOMBRA PRESENTS</div>
-          <div id="kanji">音楽喫茶</div>
-          <div id="title">HALLUCINATE</div>
-          <div id="sub">THE SOMBRA LISTENING ROOM · 音楽喫茶</div>
-          <div id="enter">▸ SLIDE THE DOOR OPEN ◂</div>
-          {fit && (
-            <button
-              id="introFit"
-              onClick={(e) => {
-                e.stopPropagation(); // don't let the tap fall through to "enter"
-                setFitOpen(true);
-              }}
-            >
-              <AvatarPreview fit={fit} size={20} /> ◇ customize your fit
-            </button>
-          )}
-          <div id="howto">
-            <span className="deskOnly">
-              <span className="key">WASD</span> walk &nbsp;·&nbsp;{" "}
-              <span className="key">CLICK</span> anything to go use it &nbsp;·&nbsp;{" "}
-              <span className="key">E</span> dig · talk · browse
-            </span>
-            <span className="touchOnly">
-              drag the <b>stick</b> or tap anything &nbsp;·&nbsp; tap{" "}
-              <span className="key">E</span> to dig · talk · browse
-            </span>
-            <br />
-            <b style={{ color: "var(--lantern)" }}>dig the realms for records</b> — every find
-            lands in your <b>Crate Dex</b>
-            <br />
-            <b style={{ color: "var(--lantern)" }}>
-              everyone here hears the same track
-            </b>{" "}
-            — cue a record to add it
-            <br />
-            visit{" "}
-            <b style={{ color: "var(--vermilion)" }}>新着 NEW ARRIVALS</b> to
-            pour in your own links
-          </div>
-        </div>
-      </div>
+      {/* the door (id="intro"): its CLICK is the knock, the gesture that lets
+          the in-gesture playStation make sound on phones */}
+      {doorPhase !== "gone" && (
+        <Door
+          phase={doorPhase}
+          slideMs={doorSlideMs}
+          live={doorLive}
+          line={doorLine}
+          onAir={onAir.live}
+          fit={fit}
+          onKnock={enter}
+          onFit={() => setFitOpen(true)}
+        />
+      )}
     </div>
   );
 }
@@ -1243,24 +1367,6 @@ function VenueClock({ engineRef }: { engineRef: RefObject<BarEngine | null> }) {
       <span className="vcGlyph">{phase.glyph}</span>
       <span className="vcLabel">{phase.label}</span>
       <span className="vcTime">{phase.utcLabel}</span>
-    </div>
-  );
-}
-
-// The listener pill counts the bar's regulars (the NPCs) as listeners, so nobody
-// walks into an empty room: 10–20, reshuffled each UTC hour and seeded by the hour,
-// so everyone in the bar sees the same number. Real listeners beyond you add on top.
-// Display only — solo mode, host election and cue caps still run on the real roster.
-function RosterPill({ real }: { real: number }) {
-  const [hour, setHour] = useState(() => Math.floor(Date.now() / 3_600_000));
-  useEffect(() => {
-    const t = setInterval(() => setHour(Math.floor(Date.now() / 3_600_000)), 60_000);
-    return () => clearInterval(t);
-  }, []);
-  const n = 10 + Math.floor(mulberry32(hour)() * 11) + Math.max(0, real - 1);
-  return (
-    <div id="roster" title="listeners in the bar right now">
-      ☕ {n} listeners
     </div>
   );
 }

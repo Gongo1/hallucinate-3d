@@ -861,22 +861,22 @@ select,
 
 /* fit triggers */
 #introFit {
-  margin: 22px auto 0;
+  margin-top: 2px;
   display: inline-flex;
   align-items: center;
-  gap: 8px;
-  background: var(--panel);
-  border: 1px solid rgba(126, 155, 94, 0.45);
-  color: var(--cream);
+  gap: 7px;
+  background: rgba(26, 18, 10, 0.06);
+  border: 1px solid rgba(26, 18, 10, 0.22);
+  color: var(--ink);
   border-radius: 999px;
-  padding: 8px 16px 8px 8px;
+  padding: 4px 12px 4px 4px;
   font-family: "DM Mono", monospace;
-  font-size: 12px;
+  font-size: 11px;
   letter-spacing: 0.08em;
   cursor: pointer;
 }
 #introFit:hover {
-  border-color: var(--moss);
+  border-color: rgba(26, 18, 10, 0.5);
 }
 #fitBtn {
   background: var(--panel);
@@ -893,7 +893,9 @@ select,
   border-color: var(--moss);
 }
 
-/* intro */
+/* the door (id="intro") — a lit shoji in the dark; the live room waits behind
+   it and the panels slide apart to reveal it. Phases come from Bar.tsx:
+   door-shut → door-knock → (door-hold) → door-open, then it unmounts. */
 #intro {
   position: fixed;
   inset: 0;
@@ -901,67 +903,185 @@ select,
   display: grid;
   place-items: center;
   cursor: pointer;
-  background: radial-gradient(ellipse at 50% 42%, #2a1d11, #0a0604 76%);
-  transition: opacity 0.5s ease;
+  overflow: hidden;
+  --slide: 1200ms;
+  --door-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
 }
-#intro.gone {
+.doorPanel {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50.5%;
+  background:
+    repeating-linear-gradient(90deg, var(--wood-d) 0 3px, transparent 3px 96px),
+    repeating-linear-gradient(180deg, var(--wood-d) 0 3px, transparent 3px 124px),
+    radial-gradient(ellipse 130% 85% at var(--gx) 50%, #f6dcae 0%, #d9b27c 52%, #8f6a3f 100%);
+  box-shadow: inset 0 0 0 clamp(8px, 1.3vw, 14px) var(--wood-dd);
+  transition: transform var(--slide) var(--door-ease);
+  will-change: transform;
+}
+.doorPanel.l {
+  left: 0;
+  --gx: 100%;
+}
+.doorPanel.r {
+  right: 0;
+  --gx: 0%;
+}
+.doorSeam {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 2px;
+  transform: translateX(-50%);
+  background: var(--lantern);
+  opacity: 0.35;
+  box-shadow: 0 0 10px 2px rgba(255, 179, 94, 0.35);
+  transition: opacity 0.45s var(--door-ease), box-shadow 0.45s var(--door-ease);
+}
+.door-knock .doorSeam,
+.door-hold .doorSeam {
+  opacity: 1;
+  box-shadow: 0 0 34px 10px rgba(255, 179, 94, 0.7);
+}
+.doorText {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  text-align: center;
+  color: var(--ink);
+  padding: 48px 40px;
+  /* the lantern behind the paper is brightest here, so the ink stays legible
+     over the lattice */
+  background: radial-gradient(ellipse closest-side, rgba(246, 220, 174, 0.94) 55%, rgba(246, 220, 174, 0));
+  transition: opacity 0.25s var(--door-ease);
+}
+.doorPresents {
+  font-family: "DM Mono", monospace;
+  font-size: 10px;
+  letter-spacing: 0.3em;
+  opacity: 0.8;
+}
+.doorKanji {
+  font-family: "Shippori Mincho", serif;
+  font-weight: 600;
+  font-size: clamp(16px, 2.4vw, 22px);
+  letter-spacing: 0.32em;
+  color: #8e2a1b;
+}
+.doorTitle {
+  margin: 0;
+  font-family: "Shippori Mincho", serif;
+  font-weight: 800;
+  font-size: clamp(34px, 7vw, 64px);
+  letter-spacing: 0.06em;
+  line-height: 1;
+}
+.doorLive {
+  min-height: 1.4em;
+  margin-top: 6px;
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+}
+.doorDot {
+  display: inline-block;
+  width: 0.55em;
+  height: 0.55em;
+  margin-right: 0.55em;
+  border-radius: 50%;
+  background: #3f6b2a;
+  vertical-align: 0.05em;
+}
+#intro.onAir .doorDot {
+  background: var(--vermilion);
+}
+.doorLine {
+  min-height: 1.35em;
+  font-family: "Shippori Mincho", serif;
+  font-weight: 600;
+  font-size: clamp(15px, 2vw, 18px);
+}
+.door-hold .doorLine {
+  animation: doorWait 1.2s ease-in-out infinite;
+}
+@keyframes doorWait {
+  50% {
+    opacity: 0.45;
+  }
+}
+.doorKnock {
+  margin-top: 10px;
+  font-family: "DM Mono", monospace;
+  font-size: 13px;
+  letter-spacing: 0.3em;
+  background: var(--ink);
+  color: var(--shoji);
+  border: 0;
+  border-radius: 999px;
+  padding: 11px 26px 11px 30px;
+  cursor: pointer;
+  box-shadow: 0 6px 18px rgba(26, 18, 10, 0.35);
+  transition: transform 0.2s var(--door-ease);
+}
+.doorKnock:hover {
+  transform: translateY(-1px);
+}
+.doorKnock:focus-visible,
+#introFit:focus-visible {
+  outline: 2px solid var(--vermilion);
+  outline-offset: 3px;
+}
+.door-open {
+  cursor: default;
+}
+.door-open .doorPanel.l {
+  transform: translateX(-101%);
+}
+.door-open .doorPanel.r {
+  transform: translateX(101%);
+}
+.door-open .doorSeam,
+.door-open .doorText {
   opacity: 0;
   pointer-events: none;
 }
-#intro .glow {
-  position: absolute;
-  width: 140vmax;
-  height: 140vmax;
-  left: 50%;
-  top: 40%;
-  transform: translate(-50%, -50%);
-  background: radial-gradient(circle, rgba(255, 179, 94, 0.13), transparent 56%);
-}
-#introInner {
-  text-align: center;
-  position: relative;
-  padding: 20px;
-}
-#kanji {
-  font-family: "Shippori Mincho", serif;
-  font-size: clamp(28px, 5vw, 46px);
-  color: var(--vermilion);
-  letter-spacing: 0.3em;
-  opacity: 0.92;
-  text-shadow: 0 0 24px rgba(214, 69, 47, 0.4);
-}
-#title {
-  font-family: "Shippori Mincho", serif;
-  font-weight: 800;
-  font-size: clamp(38px, 8vw, 72px);
-  color: var(--lantern);
-  letter-spacing: 0.04em;
-  text-shadow: 0 0 22px rgba(255, 179, 94, 0.55);
-  margin-top: 6px;
-}
-#sub {
-  font-size: 11px;
-  letter-spacing: 0.5em;
-  opacity: 0.78;
-  margin-top: 8px;
-}
-#enter {
-  margin-top: 30px;
-  font-size: 12px;
-  letter-spacing: 0.24em;
-  opacity: 0.85;
-  animation: pulse 1.8s infinite;
-}
-@keyframes pulse {
-  50% {
-    opacity: 0.3;
+@media (prefers-reduced-motion: reduce) {
+  .doorPanel {
+    transition: opacity var(--slide) linear;
+  }
+  .door-open .doorPanel.l,
+  .door-open .doorPanel.r {
+    transform: none;
+    opacity: 0;
+  }
+  .door-hold .doorLine {
+    animation: none;
   }
 }
-#howto {
-  margin-top: 26px;
-  font-size: 11px;
-  opacity: 0.5;
-  line-height: 1.95;
+
+/* the room's interface waits behind the door, then follows it in: now playing,
+   then the top bar, then the controls. `from` only + backwards fill, so each
+   piece eases up to its OWN resting opacity (the hint rests at 0.4). */
+#wrap.chrome-hidden :is(#np, #topbar, #hint, #prompt, #lobby, #chatToggle, #stick, #actBtn, #danceBtnTouch) {
+  opacity: 0;
+  pointer-events: none;
+}
+#wrap.chrome-in :is(#np, #topbar, #hint, #prompt, #lobby, #chatToggle, #stick, #actBtn, #danceBtnTouch) {
+  animation: chromeIn 0.3s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
+}
+#wrap.chrome-in :is(#topbar, #hint) {
+  animation-delay: 150ms;
+}
+#wrap.chrome-in :is(#prompt, #lobby, #chatToggle, #stick, #actBtn, #danceBtnTouch) {
+  animation-delay: 300ms;
+}
+@keyframes chromeIn {
+  from {
+    opacity: 0;
+  }
 }
 
 #topbar {
@@ -1619,13 +1739,6 @@ select,
 }
 
 /* ---- Sombra continuity (subdomain crossing) ---- */
-#presents {
-  font-size: 10px;
-  letter-spacing: 0.34em;
-  color: var(--color-terracotta, #c97e5d);
-  opacity: 0.75;
-  margin-bottom: 10px;
-}
 #sombraDoor {
   background: var(--panel);
   border: 1px solid rgba(201, 126, 93, 0.5);

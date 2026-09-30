@@ -289,6 +289,11 @@ export class BarEngine {
     return move;
   }
 
+  /** The door ritual's camera dolly — passed straight to the view. */
+  setArrival(mult: number, ms = 0) {
+    this.view.setArrival(mult, ms);
+  }
+
   /** Camera: the close over-the-shoulder view (default) or the high overview.
    *  Remembered on this device. */
   toggleView(): ViewMode {

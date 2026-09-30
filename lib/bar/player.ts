@@ -99,9 +99,32 @@ export class BarPlayer {
   private blockTimer: ReturnType<typeof setTimeout> | null = null;
   private reportedDuration = false; // duration reported for the current track?
   private inited = false;
+  // the door ritual's one-shot volume profile: start at `floor`, swell to full
+  // from `at` over `ms` (at = Infinity until the door opens). Desktop only in
+  // effect — iOS ignores programmatic volume, so there the track just arrives.
+  private arrival: { floor: number; at: number; ms: number } | null = null;
 
   constructor(opts: PlayerOpts) {
     this.opts = opts;
+  }
+
+  /** Door ritual: the next track starts near-silent, as if through the wall.
+   *  Call BEFORE playStation. swell() opens it up; a safety swell fires if the
+   *  door never calls it. */
+  holdLow(floor = 12) {
+    const a = { floor, at: Infinity, ms: 800 };
+    this.arrival = a;
+    setTimeout(() => {
+      if (this.arrival === a && a.at === Infinity) this.swell(800);
+    }, 4000);
+  }
+
+  /** Door ritual: swell the held track to full volume over `ms`. */
+  swell(ms: number) {
+    const a = this.arrival;
+    if (!a) return;
+    a.at = performance.now();
+    a.ms = Math.max(1, ms);
   }
 
   /** Kick off SDK loading and the progress ticker. Called at mount (BEFORE any
@@ -464,6 +487,26 @@ export class BarPlayer {
   // players — a possible follow-up); this just removes the hard cut on start.
   private fadeIn() {
     if (this.fadeTimer) clearInterval(this.fadeTimer);
+    const a = this.arrival;
+    if (a) {
+      // door arrival: hold near-silent until swell(), then ramp. Time-based, so a
+      // late YT onReady re-entering here lands at the right level.
+      const tick = () => {
+        const k = a.at === Infinity ? 0 : (performance.now() - a.at) / a.ms;
+        if (k >= 1) {
+          if (this.fadeTimer) clearInterval(this.fadeTimer);
+          this.fadeTimer = null;
+          if (this.arrival === a) this.arrival = null;
+          this.setVol(100);
+          return;
+        }
+        const e = k <= 0 ? 0 : 1 - Math.pow(1 - k, 2);
+        this.setVol(Math.round(a.floor + (100 - a.floor) * e));
+      };
+      tick();
+      this.fadeTimer = setInterval(tick, 50);
+      return;
+    }
     let v = 0;
     this.setVol(0);
     this.fadeTimer = setInterval(() => {

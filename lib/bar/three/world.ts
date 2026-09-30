@@ -101,6 +101,9 @@ export class World3D {
   private scene = new THREE.Scene();
   readonly camera = new THREE.PerspectiveCamera(VIEWS.close.fov, 1, 10, 6000);
   private viewMode: ViewMode = "close";
+  // arrival dolly: a camera-distance multiplier eased from → to (the door ritual
+  // holds the camera back while the door is shut, then glides in as it opens)
+  private arrival = { from: 1, to: 1, at: 0, ms: 0 };
   // scenery between the camera and you fades out of the way (mesh → its own material)
   private faded = new Map<THREE.Mesh, THREE.Material>();
   private fadeTick = 0;
@@ -347,6 +350,19 @@ export class World3D {
     return this.viewMode;
   }
 
+  /** Ease the camera distance to `mult`× the normal follow distance over `ms`
+   *  (0 = jump). View-only: the door ritual's dolly. */
+  setArrival(mult: number, ms = 0) {
+    const from = ms > 0 ? this.arrivalNow() : mult;
+    this.arrival = { from, to: mult, at: performance.now(), ms };
+  }
+  private arrivalNow(): number {
+    const a = this.arrival;
+    if (a.ms <= 0) return a.to;
+    const k = Math.min(1, (performance.now() - a.at) / a.ms);
+    return a.from + (a.to - a.from) * (1 - Math.pow(1 - k, 3));
+  }
+
   resize() {
     this.W = this.canvas.clientWidth || 1;
     this.H = this.canvas.clientHeight || 1;
@@ -444,10 +460,11 @@ export class World3D {
     this.snapCam = false;
     this.target.x += (tx - this.target.x) * k;
     this.target.z += (tz - this.target.z) * k;
+    const dist = this.camDist * this.arrivalNow();
     this.camera.position.set(
       this.target.x,
-      this.target.y + Math.sin(v.pitch) * this.camDist,
-      this.target.z + Math.cos(v.pitch) * this.camDist
+      this.target.y + Math.sin(v.pitch) * dist,
+      this.target.z + Math.cos(v.pitch) * dist
     );
     this.camera.lookAt(this.target.x, this.viewMode === "close" ? 30 : 18, this.target.z);
     if (this.viewMode === "close" && ++this.fadeTick % 3 === 0) this.fadeOccluders(p);
