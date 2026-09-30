@@ -35,3 +35,11 @@ Run the dev server with `SUPABASE_SERVICE_ROLE_KEY` in the process env (pulled t
 - **Walk up + E** (zone `board`) → `BoardOverlay`: top 10 of each, your row highlighted, your overall place + points, the scoring legend, and the reset time.
 - **The master** (pour-over `bar` zone) → `MasterTalk`: who's been digging all week, who's carrying the most trinkets, where you stand, when it's wiped. "Pour me a pick" keeps the old skip.
 - **Data:** `weekBoard()` = `hallu_board(weekKey())` top 20 by score + your own row. Refreshed once you're inside and every 60s. The board resets on the drop-week boundary (Friday 17:00 UTC).
+
+## The drop box: suggested records (8cce899, Sep 30)
+- **Visitors can't add to crates** (`ingestLinks` is owner-only). They *suggest*: through the drop box beside THIS WEEK (`KISSA_DROPBOX`, zone `dropbox`), "add a record" from the master, the "＋ add a record" button, or the 新着 crate. All open `SubmitCard`: follow @sombra.atx on Instagram, up to 5 links, plus an optional note and IG handle.
+- **The copy:** reviewed every week into THIS WEEK or the Sombra Selection.
+- **Data:** `hallu_submissions` (migration `20260930d`, server-only). A member cookie is required, 10 links a day, and a pending duplicate isn't re-queued.
+- **Review:** `/booth` "the drop box" list → THIS WEEK / SELECTION (runs `ingestLinks` with the booth cookie) or pass.
+- **Owner check:** `page.tsx` passes `owner` (booth cookie), and the owner keeps the direct add box.
+- Typing in any field no longer fires Bar's M / C / R hotkeys.
