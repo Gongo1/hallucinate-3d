@@ -7,11 +7,11 @@ export type ActiveRef =
   | { type: "shelf"; id: string }
   | { type: "door"; to: string }
   | { type: "secret"; id: string }
-  | { type: "deck" | "bar" | "portal" | "goldrecord" | "keeper" | "wander" | "board" };
+  | { type: "deck" | "bar" | "portal" | "goldrecord" | "keeper" | "wander" | "board" | "dropbox" };
 
 /** A clickable thing under the cursor (meshes carry this in userData.pick). */
 export interface PickRef {
-  kind: "shelf" | "door" | "keeper" | "secret" | "board" | "deck" | "bar" | "portal" | "goldrecord" | "wander";
+  kind: "shelf" | "door" | "keeper" | "secret" | "board" | "dropbox" | "deck" | "bar" | "portal" | "goldrecord" | "wander";
   id?: string;
 }
 

@@ -5,7 +5,7 @@ import { SKINS, HATS, NECKS, EYES, parseGear, type Fit, type Hat, type Neck, typ
 import {
   ROOM, WALL, KISSA, KISSA_SEATED, KISSA_MASTER, GARDEN, OMAKASE, BERLIN, TEA, CURATOR,
   PLAYA, WAREHOUSE, ROOFTOP, TRATTORIA, ARCHIVE, LAB_GRID, LAB_COLS, LAB_ROWS, LAB_CW, LAB_CH,
-  DIG_SPOTS, KISSA_FEATURED, KISSA_BOARD, type DigSpot,
+  DIG_SPOTS, KISSA_FEATURED, KISSA_BOARD, KISSA_DROPBOX, type DigSpot,
 } from "./layout";
 import { World3D, type Actor, type ViewMode } from "./three/world";
 import { DANCE_MOVES, DANCE_SECONDS, type DanceMove } from "./three/character";
@@ -46,6 +46,8 @@ type Zone =
   | { type: "bar"; cx: number; cy: number; r: number }
   // the weekly board on the back wall (kissa)
   | { type: "board"; cx: number; cy: number; r: number }
+  // the drop box: suggest a record for review (kissa)
+  | { type: "dropbox"; cx: number; cy: number; r: number }
   | { type: "portal"; cx: number; cy: number; r: number }
   | { type: "goldrecord"; cx: number; cy: number; r: number; url: string; label?: string }
   | { type: "door"; cx: number; cy: number; r: number; door: RoomDoor }
@@ -564,6 +566,9 @@ export class BarEngine {
     });
     // the weekly board: read it standing just in front (it's on the wall)
     this.zones.push({ type: "board", cx: KISSA_BOARD.x, cy: KISSA_BOARD.readY, r: 70 });
+    // the drop box: a small solid you walk up to (suggest a record)
+    this.solid(KISSA_DROPBOX.x - 16, KISSA_DROPBOX.y - 12, 32, 24);
+    this.zones.push({ type: "dropbox", cx: KISSA_DROPBOX.x, cy: KISSA_DROPBOX.readY, r: 52 });
     // Rave portal: the doorway frame is solid (you can't walk into the wall); its
     // prompt/charge zone sits in FRONT of the rift (to the right, into the room),
     // so approach + explicit E is the only path — never a walk-through.
@@ -843,6 +848,8 @@ export class BarEngine {
       this.cb.onMastersPick();
     } else if (z.type === "board") {
       this.cb.onOpenBoard?.();
+    } else if (z.type === "dropbox") {
+      this.cb.onOpenIngest(); // the host decides: suggest (visitors) or add (owner)
     } else if (z.type === "deck") {
       this.cb.onShowDeck();
     } else if (z.type === "portal") {
@@ -1412,6 +1419,7 @@ export class BarEngine {
       if (best.type === "deck") s = `Drop in on the <b>house radio</b>`;
       if (best.type === "bar") s = `Talk to the <b>master</b> · who's leading this week`;
       if (best.type === "board") s = `Read <b>the board</b> · this week's diggers`;
+      if (best.type === "dropbox") s = `Add a record · <b>the drop box</b>`;
       if (best.type === "portal") s = `Enter the <b>rave</b>?`;
       if (best.type === "goldrecord")
         s = best.label ?? `Give <b>Houseum</b> their flowers — open their YouTube ↗`;

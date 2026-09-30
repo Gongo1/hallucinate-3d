@@ -71,6 +71,7 @@ import {
 } from "@/app/actions/members";
 import { memberTag } from "@/lib/members/tag";
 import { notePlay } from "@/app/actions/plays";
+import { submitRecords } from "@/app/actions/submissions";
 
 // The door ritual's timing (ms from the knock). Spec:
 // KB/Sombra/outputs/html/2026-09-29-hallucinate-door-ritual.html
@@ -204,12 +205,15 @@ export default function Bar({
   initialShelves,
   member = null,
   invite = null,
+  owner = false,
 }: {
   initialShelves: Shelf[];
   /** the returning member's number (from the signed cookie), for the door */
   member?: number | null;
   /** a /k/ key waiting at the door: who sent it, or the number it hands over */
   invite?: { from: number | null; claim: number | null } | null;
+  /** a verified /booth session: adds records straight to crates */
+  owner?: boolean;
 }) {
   // ----- library: seeded server-side from Supabase (see lib/bar/data.ts) -----
   const [shelves, setShelves] = useState<Shelf[]>(initialShelves);
@@ -248,6 +252,11 @@ export default function Bar({
   const [boardOpen, setBoardOpen] = useState(false);
   const [masterOpen, setMasterOpen] = useState(false);
   const refreshBoardRef = useRef<() => void>(() => {});
+  // adding records: the owner files them straight into crates; everyone else
+  // suggests them (the drop box), reviewed weekly into THIS WEEK / the Selection
+  const [submitOpen, setSubmitOpen] = useState(false);
+  const openAddRef = useRef<() => void>(() => {});
+  openAddRef.current = () => (owner ? setIngestOpen(true) : setSubmitOpen(true));
   const countedPlayRef = useRef(0); // the startedAt of the last track this host counted
   const [prompt, setPrompt] = useState<string | null>(null);
   const [np, setNp] = useState<PlayerState>(EMPTY_NP);
@@ -333,7 +342,7 @@ export default function Bar({
     if (giftKey) giftShownAtRef.current = performance.now();
   }, [giftKey]);
   overlayOpenRef.current =
-    crate !== null || ingestOpen || dialogue !== null || dexOpen || mapOpen || giftShowing !== null || boardOpen || masterOpen;
+    crate !== null || ingestOpen || dialogue !== null || dexOpen || mapOpen || giftShowing !== null || boardOpen || masterOpen || submitOpen;
   const typingRef = useRef(false);
 
   // ----- dom + instance refs -----
@@ -428,9 +437,9 @@ export default function Bar({
           // an empty curated crate is being stocked by Sombra — not a paste box
           else if (shelf.slug && CURATED_CRATES.has(shelf.slug))
             gameRef.current.toast(`${shelf.label.replace(/·.*/, "").trim()} is being curated — check back soon`);
-          else setIngestOpen(true);
+          else openAddRef.current();
         },
-        onOpenIngest: () => setIngestOpen(true),
+        onOpenIngest: () => openAddRef.current(),
         // the bar master skips the room to the next track (cue first, then radio)
         // the master behind the bar: who's leading this week (+ a pick, on request)
         onMastersPick: () => {
@@ -464,6 +473,7 @@ export default function Bar({
           setMapOpen(false);
           setBoardOpen(false);
           setMasterOpen(false);
+          setSubmitOpen(false);
         },
         isOverlayOpen: () => overlayOpenRef.current,
         isPlaying: () => playingRef.current,
@@ -1054,6 +1064,10 @@ export default function Bar({
     };
     const onKey = (e: KeyboardEvent) => {
       if (typingRef.current || !startedRef.current) return;
+      // typing in any field (the drop box, the list card, a shelf name) must
+      // never fire M / C / R — an "r" in a link used to wander you off
+      const el = e.target as HTMLElement | null;
+      if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
       const k = e.key.toLowerCase();
       if (k === "enter" && dialogueOpenRef.current) {
         e.preventDefault();
@@ -1233,11 +1247,11 @@ export default function Bar({
         <button
           id="addBtn"
           onClick={() => {
-            setIngestOpen(true);
+            openAddRef.current();
             setMenuOpen(false);
           }}
         >
-          ＋ 新着 add records
+          {owner ? "＋ 新着 add records" : "＋ add a record"}
         </button>
         {started && (
           <button
@@ -1482,6 +1496,10 @@ export default function Bar({
             setMasterOpen(false);
             setBoardOpen(true);
           }}
+          onAdd={() => {
+            setMasterOpen(false);
+            openAddRef.current();
+          }}
           onPick={() => {
             setMasterOpen(false);
             presenceRef.current?.skip();
@@ -1491,6 +1509,14 @@ export default function Bar({
       )}
 
       {boardOpen && <BoardOverlay board={board} onClose={() => setBoardOpen(false)} />}
+
+      {submitOpen && (
+        <SubmitCard
+          memberNo={memberNo}
+          onClose={() => setSubmitOpen(false)}
+          onSent={() => giftRef.current({ kind: "ingest" }, "the bar — thanks for the record")}
+        />
+      )}
 
       {listOpen && (
         <ListCard
@@ -1595,6 +1621,7 @@ function masterLines(b: WeekBoard | null): string[] {
     );
   }
   out.push(`Board gets wiped ${resetWhen(b.endsAt).replace(" · ", ", ")}.`);
+  out.push("Got a record the room should hear? Tell me. I go through them every week.");
   return out;
 }
 
@@ -1603,11 +1630,13 @@ function MasterTalk({
   board,
   onClose,
   onBoard,
+  onAdd,
   onPick,
 }: {
   board: WeekBoard | null;
   onClose: () => void;
   onBoard: () => void;
+  onAdd: () => void;
   onPick: () => void;
 }) {
   return (
@@ -1627,6 +1656,9 @@ function MasterTalk({
         <div className="mtBtns">
           <button type="button" className="primary" onClick={onBoard}>
             read the board
+          </button>
+          <button type="button" onClick={onAdd}>
+            add a record
           </button>
           <button type="button" onClick={onPick}>
             pour me a pick
@@ -1694,6 +1726,115 @@ function BoardOverlay({ board, onClose }: { board: WeekBoard | null; onClose: ()
         )}
         <div className="bdLegend">keep a record 10 · trinket 15 · secret passage 25 · realm badge 40 · stay for an ON AIR set 20</div>
       </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------ suggest a record */
+/** Visitors suggest records; Sombra reviews them weekly into THIS WEEK or the
+ *  Sombra Selection. Step one is following @sombra.atx on Instagram. */
+function SubmitCard({
+  memberNo,
+  onClose,
+  onSent,
+}: {
+  memberNo: number | null;
+  onClose: () => void;
+  onSent: () => void;
+}) {
+  const [links, setLinks] = useState("");
+  const [note, setNote] = useState("");
+  const [ig, setIg] = useState("");
+  const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const [msg, setMsg] = useState("");
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setState("busy");
+    const r = await submitRecords({ text: links, note, instagram: ig }).catch(() => ({
+      ok: false,
+      message: "Couldn't drop that in just now. Try again in a moment.",
+    }));
+    if (r.ok) {
+      setState("done");
+      onSent();
+    } else {
+      setState("error");
+      setMsg(r.message ?? "Couldn't drop that in just now.");
+    }
+  };
+  return (
+    <div
+      className="overlay open"
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <form id="submitCard" onSubmit={submit}>
+        <button type="button" className="lcX" onClick={onClose}>
+          close ✕
+        </button>
+        <div className="lcKicker">投函 · THE DROP BOX</div>
+        <div className="lcTitle">Add a record to the room</div>
+        {state === "done" ? (
+          <div className="lcBody">
+            {"It's in the box. Every week Sombra goes through them, and the best land in This Week or the Sombra Selection. Keep an eye on the crates."}
+          </div>
+        ) : (
+          <>
+            <div className="lcBody">
+              Every week Sombra reviews what&apos;s been dropped in, and the best go into <b>This Week</b> or the{" "}
+              <b>Sombra Selection</b>.
+            </div>
+            <div className="scStep">
+              <span className="scNum">1</span>
+              <span>
+                Follow{" "}
+                <a href="https://www.instagram.com/sombra.atx/" target="_blank" rel="noopener noreferrer">
+                  @sombra.atx
+                </a>{" "}
+                on Instagram. That&apos;s where picks get shouted out.
+              </span>
+            </div>
+            <div className="scStep">
+              <span className="scNum">2</span>
+              <span>Paste a YouTube or SoundCloud link (up to 5, one per line). House only.</span>
+            </div>
+            <textarea
+              id="submitLinks"
+              aria-label="Record links"
+              placeholder={"Artist — Title | https://youtu.be/…"}
+              value={links}
+              onChange={(e) => setLinks(e.target.value)}
+              required
+            />
+            <input
+              id="submitNote"
+              aria-label="Why this one (optional)"
+              placeholder="Why this one? (optional)"
+              value={note}
+              maxLength={280}
+              onChange={(e) => setNote(e.target.value)}
+            />
+            <div className="lcField">
+              <input
+                id="submitIg"
+                aria-label="Your Instagram (optional)"
+                placeholder="@your.instagram (optional)"
+                value={ig}
+                maxLength={40}
+                onChange={(e) => setIg(e.target.value)}
+              />
+              <button type="submit" disabled={state === "busy"}>
+                {state === "busy" ? "…" : "Drop it in"}
+              </button>
+            </div>
+            {state === "error" && <div className="lcErr">{msg}</div>}
+          </>
+        )}
+        <div className="lcFine">
+          {memberNo ? `From member ${memberTag(memberNo)} · ` : ""}reviewed every week
+        </div>
+      </form>
     </div>
   );
 }

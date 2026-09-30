@@ -3,7 +3,6 @@
 import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
 import { BOOTH_COOKIE, verifyToken } from "@/lib/booth/auth";
-import { CURATED_CRATES } from "@/lib/bar/layout";
 import { getServerClient } from "@/lib/supabase/server";
 import { enrichTracks } from "@/lib/bar/enrich";
 import { parseLinks } from "@/lib/bar/ingest";
@@ -61,8 +60,12 @@ export async function ingestLinks(input: {
   if (!parsed.length)
     return { ok: false, message: "No YouTube/SoundCloud links found." };
 
-  // Curated crates (the Listening Room's featured Gongo + Sombra Selection) take
-  // records from the owner only — a verified /booth session.
+  // Only the owner adds to crates (a verified /booth session). Visitors suggest
+  // records instead (app/actions/submissions.ts), reviewed weekly into THIS
+  // WEEK / the Sombra Selection (Austin, 2026-09-30).
+  const jar = await cookies();
+  if (!verifyToken(jar.get(BOOTH_COOKIE)?.value))
+    return { ok: false, message: "Records are added by Sombra. Drop yours in the box by This Week and it'll be reviewed." };
   let targetSlug: string | null = null;
   if (input.target.kind === "existing") {
     const { data: t } = await getServerClient()
@@ -71,21 +74,6 @@ export async function ingestLinks(input: {
       .eq("id", input.target.shelfId)
       .single();
     targetSlug = (t?.slug as string | null | undefined) ?? null;
-    if (targetSlug && CURATED_CRATES.has(targetSlug)) {
-      const jar = await cookies();
-      if (!verifyToken(jar.get(BOOTH_COOKIE)?.value))
-        return {
-          ok: false,
-          message: "That crate is curated by Sombra — drop your links in 新着 NEW ARRIVALS.",
-        };
-    }
-  }
-  // New crates are owner-only too (Austin, 2026-09-29): the rooms stay curated,
-  // and visitors' finds go to 新着 NEW ARRIVALS (in the Archive).
-  if (input.target.kind === "new") {
-    const jar = await cookies();
-    if (!verifyToken(jar.get(BOOTH_COOKIE)?.value))
-      return { ok: false, message: "New crates are made by Sombra — drop your links in 新着 NEW ARRIVALS." };
   }
   // the one cap exception: full DJ sets filed into a FULL_SET_CRATES crate
   const fullSets = !!targetSlug && FULL_SET_CRATES.has(targetSlug);

@@ -3368,7 +3368,7 @@ select,
   border-color: rgba(126, 155, 94, 0.5);
   color: var(--moss);
 }
-#listCard {
+:is(#listCard, #submitCard) {
   position: relative;
   width: min(380px, calc(100vw - 32px));
   display: grid;
@@ -3380,7 +3380,7 @@ select,
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
   color: var(--cream);
 }
-#listCard .lcX {
+:is(#listCard, #submitCard) .lcX {
   justify-self: end;
   margin: -8px -4px -4px 0;
   background: none;
@@ -3391,28 +3391,28 @@ select,
   font-size: 11px;
   cursor: pointer;
 }
-#listCard .lcKicker {
+:is(#listCard, #submitCard) .lcKicker {
   font-family: "DM Mono", monospace;
   font-size: 10.5px;
   letter-spacing: 0.24em;
   color: var(--lantern);
 }
-#listCard .lcTitle {
+:is(#listCard, #submitCard) .lcTitle {
   font-family: "Shippori Mincho", serif;
   font-weight: 800;
   font-size: 24px;
   color: var(--shoji);
 }
-#listCard .lcBody {
+:is(#listCard, #submitCard) .lcBody {
   font-size: 14px;
   line-height: 1.55;
   opacity: 0.8;
 }
-#listCard .lcField {
+:is(#listCard, #submitCard) .lcField {
   display: flex;
   gap: 8px;
 }
-#listCard input {
+:is(#listCard, #submitCard) input {
   flex: 1;
   min-width: 0;
   font-size: 16px; /* 16px: no iOS zoom-on-focus */
@@ -3422,11 +3422,11 @@ select,
   border-radius: 999px;
   padding: 10px 14px;
 }
-#listCard input:focus-visible {
+:is(#listCard, #submitCard) input:focus-visible {
   outline: 2px solid var(--lantern);
   outline-offset: 1px;
 }
-#listCard .lcField button {
+:is(#listCard, #submitCard) .lcField button {
   font-family: "DM Mono", monospace;
   font-size: 12px;
   letter-spacing: 0.06em;
@@ -3438,11 +3438,11 @@ select,
   cursor: pointer;
   white-space: nowrap;
 }
-#listCard .lcErr {
+:is(#listCard, #submitCard) .lcErr {
   font-size: 13px;
   color: #ff9a86;
 }
-#listCard .lcFine {
+:is(#listCard, #submitCard) .lcFine {
   font-family: "DM Mono", monospace;
   font-size: 10.5px;
   opacity: 0.5;
@@ -3809,4 +3809,80 @@ select,
   #recordBack .rbLen {
     display: none;
   }
+}
+
+/* the drop box card (shares the list card's look) */
+#submitCard .scStep {
+  display: grid;
+  grid-template-columns: 1.6em 1fr;
+  gap: 8px;
+  font-size: 14px;
+  line-height: 1.45;
+  opacity: 0.9;
+}
+#submitCard .scStep a {
+  color: var(--lantern);
+}
+#submitCard .scNum {
+  width: 1.5em;
+  height: 1.5em;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  background: rgba(255, 179, 94, 0.18);
+  color: var(--lantern);
+}
+#submitCard textarea,
+#submitCard #submitNote {
+  font-size: 16px;
+  background: #0f0a06;
+  color: var(--cream);
+  border: 1px solid rgba(241, 230, 210, 0.25);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+#submitCard textarea {
+  min-height: 84px;
+  resize: vertical;
+  font-family: "DM Mono", monospace;
+  font-size: 13px;
+}
+
+/* booth: the drop box review list */
+.boothSubs .subList {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  text-align: left;
+}
+.boothSubs .subList li {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(241, 230, 210, 0.15);
+  border-radius: 10px;
+}
+.boothSubs .subWhat {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+.boothSubs .subWhat a {
+  color: var(--lantern);
+  overflow-wrap: anywhere;
+}
+.boothSubs .subMeta,
+.boothSubs .subNote {
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  opacity: 0.7;
+}
+.boothSubs .subBtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }

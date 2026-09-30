@@ -65,6 +65,9 @@ export const KISSA_FEATURED: Record<string, DigSpot> = {
 /** The weekly board: a chalk whiteboard on the back wall, left of the big sign.
  *  x = its centre; y = where you stand to read it (the browse zone). */
 export const KISSA_BOARD = { x: 205, w: 236, h: 124, readY: 118 };
+/** The drop box: where visitors suggest records, standing between GONGO and
+ *  THIS WEEK. x/y = the box; readY = where you stand to use it. */
+export const KISSA_DROPBOX = { x: 485, y: 180, readY: 240 };
 /** crates only the owner (a /booth session) can add records to */
 export const CURATED_CRATES: ReadonlySet<string> = new Set(["gongo", "sombra-selection", THIS_WEEK]);
 

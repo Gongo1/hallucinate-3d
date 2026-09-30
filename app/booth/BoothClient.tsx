@@ -1,9 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { boothLogin, boothLogout, boothCommand, boothTakeNumber, boothHandoffLink } from "@/app/actions/booth";
 import type { AdminCmd } from "@/lib/booth/commands";
+import { boothSubmissions, boothReviewSubmission, type Submission } from "@/app/actions/submissions";
 
 // The booth — owner's god-mode panel. Authority is ENTIRELY server-side: this
 // component just calls server actions that re-verify the owner cookie. Logged
@@ -125,6 +126,8 @@ export default function BoothClient({ initialOwner }: { initialOwner: boolean })
                    onPlay={(t) => cmd({ kind: "forcePlay", track: t }, `now playing ${t.title}`)} />
         </div>
 
+        <Suggestions />
+
         {msg && <div className="boothMsg">{msg}</div>}
         <div className="boothRow">
           <Link className="boothBack" href="/">← back to the bar</Link>
@@ -160,6 +163,56 @@ function PinForm({
         <button className="boothBtn" onClick={() => { const t = build(); if (t) onPin(t); }}>⤵ PIN NEXT</button>
         <button className="boothBtn" onClick={() => { const t = build(); if (t) onPlay(t); }}>▶ FORCE PLAY</button>
       </div>
+    </div>
+  );
+}
+
+/** The drop box: suggested records waiting for the weekly review. Each one goes
+ *  to THIS WEEK or the Sombra Selection (through the normal ingest), or passes. */
+function Suggestions() {
+  const [list, setList] = useState<Submission[] | null>(null);
+  const [note, setNote] = useState("");
+  const load = () => void boothSubmissions().then(setList).catch(() => setList(null));
+  useEffect(load, []);
+  const review = async (id: string, to: "this-week" | "sombra-selection" | "pass") => {
+    setNote("…");
+    const r = await boothReviewSubmission(id, to);
+    setNote(r.ok ? (to === "pass" ? "passed" : `added to ${to === "this-week" ? "THIS WEEK" : "the Sombra Selection"}`) : r.message ?? "couldn't do that");
+    load();
+  };
+  return (
+    <div className="boothSubs">
+      <div className="boothSub" style={{ marginTop: 18 }}>
+        the drop box · suggested records {list ? `· ${list.length} waiting` : ""} {note && `· ${note}`}
+      </div>
+      {!list ? (
+        <div className="boothSub">loading…</div>
+      ) : !list.length ? (
+        <div className="boothSub">Nothing waiting. The box is empty.</div>
+      ) : (
+        <ol className="subList">
+          {list.map((s) => (
+            <li key={s.id}>
+              <div className="subWhat">
+                <a href={s.url} target="_blank" rel="noopener noreferrer">
+                  {s.hint || s.url}
+                </a>
+                <span className="subMeta">
+                  {s.source === "soundcloud" ? "SC" : "YT"}
+                  {s.member ? ` · #${String(s.member).padStart(3, "0")}` : ""}
+                  {s.instagram ? ` · @${s.instagram}` : ""} · {new Date(s.createdAt).toLocaleDateString()}
+                </span>
+                {s.note && <span className="subNote">“{s.note}”</span>}
+              </div>
+              <div className="subBtns">
+                <button className="boothBtn" onClick={() => review(s.id, "this-week")}>→ THIS WEEK</button>
+                <button className="boothBtn" onClick={() => review(s.id, "sombra-selection")}>→ SELECTION</button>
+                <button className="boothBtn ghost" onClick={() => review(s.id, "pass")}>pass</button>
+              </div>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   );
 }

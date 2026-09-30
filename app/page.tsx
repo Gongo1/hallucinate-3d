@@ -3,6 +3,7 @@ import Bar from "@/components/Bar";
 import { loadShelves } from "@/lib/bar/data";
 import { KEY_COOKIE, MEMBER_COOKIE, readMemberCookie } from "@/lib/members/auth";
 import { keyInfo, memberNumber } from "@/lib/members/store";
+import { BOOTH_COOKIE, verifyToken } from "@/lib/booth/auth";
 
 // Read the live library from Supabase on every request so freshly ingested
 // records survive a reload (the Phase 1 "done when").
@@ -11,7 +12,9 @@ export const dynamic = "force-dynamic";
 export default async function Home() {
   const jar = await cookies();
   const [shelves, door] = await Promise.all([loadShelves(), doorGuest(jar)]);
-  return <Bar initialShelves={shelves} member={door.member} invite={door.invite} />;
+  // the owner adds records straight to crates; everyone else suggests them
+  const owner = verifyToken(jar.get(BOOTH_COOKIE)?.value);
+  return <Bar initialShelves={shelves} member={door.member} invite={door.invite} owner={owner} />;
 }
 
 /** Who's at the door, from the cookies: a member's number ("Welcome back,
