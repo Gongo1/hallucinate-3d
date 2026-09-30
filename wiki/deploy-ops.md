@@ -35,7 +35,11 @@ does NOT fix this** (the cert is independent of deployments).
   `records`) are **additive**; never touch/migrate Sombra's tables, scope all RLS to
   ours.
 - Env: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY` (client),
-  `ADMIN_SECRET` (server-only, god mode). No service-role key is set or needed.
+  `ADMIN_SECRET` (server-only, god mode), and `SUPABASE_SERVICE_ROLE_KEY` (server-only,
+  Production only, added 2026-09-29 for Phase 2 membership). It's a new-style `sb_secret_`
+  key. `lib/supabase/server.ts` prefers it when set, so server actions (ingest included)
+  bypass RLS from the next deploy on. Never `NEXT_PUBLIC_`. For local dev, pull it into
+  `.env.local` only if a feature needs it.
 - Use the **Supabase MCP** for SQL/migrations (`execute_sql`, `apply_migration`).
 
 ## MCPs
