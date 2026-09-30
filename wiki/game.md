@@ -57,3 +57,17 @@ The **💃 dance** button (reaction row on desktop, round button beside E on tou
   - Arrivals are nudged to the nearest free spot (`freeSpot`), so a spawn can never trap you inside a fixture.
 - The engine still references no music, sync or flow symbols. `onDig` hands the host a realm and a pile index, and the host picks the record.
 - Tribute rooms (Houseum, Il Mattarello) keep attribution language. Their keepers say "tribute" and never "partner".
+
+## Dig previews (Sep 2026)
+Flipping a crate or turning up a dig plays **30s of that record, just for you**. It starts a third of the way in, since house intros run long; unknown lengths start 60s in. The room keeps playing for everyone else.
+- `BarPlayer.startPreview / endPreview / rejoin` play the preview through the SAME players as the room. On iPhone those are already unlocked by the knock; a second player would need its own tap.
+- The `previewing` effect in `Bar.tsx` previews whatever crate record or dig reveal is showing, and ends the preview when neither is open. `#previewChip` shows the countdown and "back to the room".
+- While previewing, `playStation` is ignored and `tickProgress` pauses. A preview ending never counts as the room's track ending (`onTrackEnded` → `endPreview`). `onPreviewEnd` → `rejoin(room track, live offset)`.
+- Mute during a preview ends it. Previews are skipped while you're muted or blocked. SoundCloud records may not preview on iOS.
+
+## Crates: the three-crate Listening Room + weekly reshuffle (Sep 2026)
+- **The Listening Room holds only GONGO, THIS WEEK (`this-week`, owner-curated weekly drop) and SOMBRA SELECTION** (`KISSA_FEATURED` in layout.ts). All three are in `CURATED_CRATES`.
+  - HOUSE is in the warehouse. FLIP THE WAX and the 新着 ingest crate are in the archive.
+  - New crates are owner-only (`ingest.ts`) and are created in the garden.
+- **Weekly reshuffle:** `lib/bar/week.ts` `weeklyShuffle(records, shelf.id)`, applied in `loadShelves`. The week turns over Friday 17:00 UTC, and THIS WEEK is not shuffled.
+- **No link-outs to Beatport/DigDeeper, ever** (owner rule). The weekly drop is Austin-approved picks matched to YouTube/SoundCloud uploads.
