@@ -40,6 +40,7 @@ interface PlayerOpts {
 /* Minimal shapes for the two external player SDKs (loaded at runtime). */
 interface YTPlayer {
   loadVideoById(arg: string | { videoId: string; startSeconds?: number }): void;
+  cueVideoById(arg: { videoId: string; startSeconds?: number }): void;
   playVideo(): void;
   pauseVideo(): void;
   stopVideo(): void;
@@ -117,6 +118,28 @@ export class BarPlayer {
     setTimeout(() => {
       if (this.arrival === a && a.at === Infinity) this.swell(800);
     }, 4000);
+  }
+
+  // the YouTube id cued (loaded, not playing) while the listener is still at
+  // the door; pendingPrime waits for the YT API if it isn't ready yet
+  private primed: string | null = null;
+  private pendingPrime: { ytId: string; offsetSec: number } | null = null;
+
+  /** Door: cue the room's track before the knock, so the knock only has to
+   *  press play. iOS lets a tap start audio only if playback begins right away;
+   *  a fresh load (network first) outlives the tap and gets blocked, while
+   *  play on an already-cued video (what the tap-to-listen pill does) works.
+   *  YouTube only — SoundCloud tracks still fall back to the pill on iOS. */
+  prime(track: Track, offsetSec: number) {
+    if (this.state.track || !track.ytId || this.primed === track.ytId) return;
+    if (!this.ytReady || !this.yt) {
+      this.pendingPrime = { ytId: track.ytId, offsetSec };
+      return;
+    }
+    try {
+      this.yt.cueVideoById({ videoId: track.ytId, startSeconds: Math.max(0, offsetSec) });
+      this.primed = track.ytId;
+    } catch {}
   }
 
   /** Door ritual: swell the held track to full volume over `ms`. */
@@ -265,11 +288,20 @@ export class BarPlayer {
       } catch {}
       this.state.source = "yt";
       if (this.ytReady && this.yt) {
-        this.yt.loadVideoById({ videoId: rec.ytId, startSeconds: offsetSec });
-        this.yt.playVideo();
+        if (this.primed === rec.ytId) {
+          // already cued at the door: just play + seek, like the tap-to-listen
+          // pill. On iOS a fresh loadVideoById outlives the tap's permission.
+          this.yt.playVideo();
+          this.yt.seekTo(offsetSec, true);
+        } else {
+          this.yt.loadVideoById({ videoId: rec.ytId, startSeconds: offsetSec });
+          this.yt.playVideo();
+        }
       }
       // if YT isn't ready yet, onReady() starts the current track at pendingSeek
     }
+    this.primed = null;
+    this.pendingPrime = null;
     this.fadeIn();
     this.setPlaying(true);
     this.armBlockWatch();
@@ -434,6 +466,14 @@ export class BarPlayer {
               this.yt!.playVideo();
               this.fadeIn();
               this.armBlockWatch();
+            } else if (this.pendingPrime && !this.state.track) {
+              // the door asked to cue a track before the API was up
+              const pp = this.pendingPrime;
+              this.pendingPrime = null;
+              try {
+                this.yt!.cueVideoById({ videoId: pp.ytId, startSeconds: pp.offsetSec });
+                this.primed = pp.ytId;
+              } catch {}
             }
           },
           onStateChange: (e: { data: number }) => {

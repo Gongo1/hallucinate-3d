@@ -19,6 +19,11 @@ const BPM = 122;
 /** Create/resume the audio context. Must run synchronously inside a click. */
 export function unlock(): boolean {
   try {
+    // iOS routes Web Audio through the "ambient" session, which the ring/silent
+    // switch mutes (the YouTube iframe's media still plays). "playback" treats
+    // the door's sounds like the music. iOS 17+ Safari only; elsewhere a no-op.
+    const session = (navigator as unknown as { audioSession?: { type: string } }).audioSession;
+    if (session) session.type = "playback";
     if (!ctx) {
       const AC =
         window.AudioContext ??

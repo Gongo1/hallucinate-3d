@@ -486,6 +486,16 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
         if (!startedRef.current) othersRef.current = n;
         rosterKnownRef.current = true;
         setRosterKnown(true);
+        // an empty room at the door: pick the opener now (not in the knock) so it
+        // can be cued in advance, same reason as the prime in onRoom
+        if (!startedRef.current && n === 0 && !pendingOpenRef.current && !latestRoomRef.current) {
+          const seed = Math.floor(Math.random() * 0x7fffffff);
+          const track = weightedPick(shelvesRef.current, phaseAt(Date.now()).target, mulberry32(seed));
+          if (track) {
+            pendingOpenRef.current = { track, seed, index: 0 };
+            playerRef.current?.prime(track, 0);
+          }
+        }
       },
       onChat: (m) =>
         setChat((c) => {
@@ -513,7 +523,15 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
         setOnAir({ live: s.live, dj: s.dj, locked: s.cueLocked });
         engineRef.current?.setOnAir(s.live, s.dj); // light the in-world sign
         refreshFlowUi();
-        if (!startedRef.current) return; // lurking — the intro tap starts audio
+        if (!startedRef.current) {
+          // lurking — the knock starts audio. Cue the room's track now so the
+          // knock only has to press play (iOS blocks a load started in the tap).
+          if (s.now) {
+            pendingOpenRef.current = null; // someone's in; no opener needed
+            playerRef.current?.prime(s.now, Math.max(0, (Date.now() - s.startedAt) / 1000));
+          }
+          return;
+        }
         if (s.now && presenceRef.current?.shouldReload()) {
           const offset = Math.max(0, (Date.now() - s.startedAt) / 1000);
           playerRef.current?.playStation(s.now, offset);
@@ -690,15 +708,16 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
       player.playStation(s.now, offset);
       p?.notePlayed(s.startedAt); // don't reload on the matching broadcast
     } else if (player) {
-      // empty room (we're about to be host) — pre-pick the opener and start it
-      // now; openRoom() hands this same pick to the host bootstrap
-      const seed = Math.floor(Math.random() * 0x7fffffff);
-      const target = phaseAt(Date.now()).target;
-      const track = weightedPick(shelvesRef.current, target, mulberry32(seed));
-      if (track) {
-        pendingOpenRef.current = { track, seed, index: 0 };
-        player.playStation(track, 0);
+      // empty room (we're about to be host) — start the opener picked (and
+      // cued) at the door, or pick one now; openRoom() hands this same pick to
+      // the host bootstrap
+      if (!pendingOpenRef.current) {
+        const seed = Math.floor(Math.random() * 0x7fffffff);
+        const target = phaseAt(Date.now()).target;
+        const track = weightedPick(shelvesRef.current, target, mulberry32(seed));
+        if (track) pendingOpenRef.current = { track, seed, index: 0 };
       }
+      if (pendingOpenRef.current) player.playStation(pendingOpenRef.current.track, 0);
     }
 
     // become a live character others can see (lurker → listener)
@@ -823,9 +842,12 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
       setRoom(r);
       const { first } = markVisited(r);
       const stamped = REALM_ORDER.filter((id) => getProgress().visited[id]).length;
-      setBanner({ key: Date.now(), room: r, first, stamped });
+      // phone: small screen + frequent room changes, so only a realm's FIRST
+      // visit gets the sign, and no "stamped" toast (the sign already says it)
+      const touch = document.body.classList.contains("touch");
+      if (first || !touch) setBanner({ key: Date.now(), room: r, first, stamped });
       if (first && r !== "kissa") {
-        toast(`✦ New realm stamped — ${stamped}/${REALM_ORDER.length}`, "green");
+        if (!touch) toast(`✦ New realm stamped — ${stamped}/${REALM_ORDER.length}`, "green");
         giftRef.current({ kind: "visit" }, REALMS[r]?.name ?? "the bar");
       }
     },
