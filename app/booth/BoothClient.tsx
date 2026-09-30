@@ -59,26 +59,7 @@ export default function BoothClient({ initialOwner }: { initialOwner: boolean })
           <button className="boothBtn primary" onClick={login} disabled={busy}>
             {busy ? "…" : "enter the booth"}
           </button>
-          <div className="boothSub" style={{ marginTop: 18 }}>founding members · #001 Gongo · #002 Elixir Pau</div>
-        <div className="boothGrid">
-          <button
-            className="boothBtn"
-            onClick={async () => setMsg((await boothTakeNumber(1)).ok ? "this device is #001" : "couldn't set #001")}
-          >
-            ☉ MAKE THIS DEVICE #001
-          </button>
-          <button
-            className="boothBtn"
-            onClick={async () => {
-              const r = await boothHandoffLink(2);
-              setMsg(r.ok && r.path ? `send Paula this one-time link: ${location.origin}${r.path}` : "couldn't make the link");
-            }}
-          >
-            ☽ HAND-OFF LINK FOR #002
-          </button>
-        </div>
-
-        {msg && <div className="boothMsg">{msg}</div>}
+          {msg && <div className="boothMsg">{msg}</div>}
           <Link className="boothBack" href="/">← back to the bar</Link>
         </div>
       </div>
@@ -127,6 +108,25 @@ export default function BoothClient({ initialOwner }: { initialOwner: boolean })
         </div>
 
         <Suggestions />
+
+        <div className="boothSub" style={{ marginTop: 18 }}>founding members · #001 Gongo · #002 Elixir Pau</div>
+        <div className="boothGrid">
+          <button
+            className="boothBtn"
+            onClick={async () => setMsg((await boothTakeNumber(1)).ok ? "this device is #001" : "couldn't set #001")}
+          >
+            ☉ MAKE THIS DEVICE #001
+          </button>
+          <button
+            className="boothBtn"
+            onClick={async () => {
+              const r = await boothHandoffLink(2);
+              setMsg(r.ok && r.path ? `send Paula this one-time link: ${location.origin}${r.path}` : "couldn't make the link");
+            }}
+          >
+            ☽ HAND-OFF LINK FOR #002
+          </button>
+        </div>
 
         {msg && <div className="boothMsg">{msg}</div>}
         <div className="boothRow">
