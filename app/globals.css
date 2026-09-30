@@ -3485,3 +3485,156 @@ select,
     animation: none;
   }
 }
+
+/* ---- membership: the list button, the member card (fit panel), the list card ---- */
+#listBtn {
+  background: var(--panel);
+  border: 1px solid rgba(255, 179, 94, 0.45);
+  color: var(--cream);
+  border-radius: 10px;
+  padding: 7px 12px;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  cursor: pointer;
+  letter-spacing: 0.05em;
+}
+#listBtn:hover {
+  border-color: var(--lantern);
+}
+#memberCard {
+  margin: 14px 0 6px;
+  padding: 14px 16px;
+  border: 1px solid rgba(255, 179, 94, 0.3);
+  border-radius: 12px;
+  background: rgba(255, 179, 94, 0.05);
+  display: grid;
+  gap: 10px;
+  text-align: left;
+}
+#memberCard .mcHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+#memberCard .mcNum {
+  font-family: "Shippori Mincho", serif;
+  font-weight: 800;
+  font-size: 26px;
+  color: var(--lantern);
+}
+#memberCard .mcSub,
+#memberCard .mcLabel {
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+}
+#memberCard .mcKeys {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+#memberCard .mcKey,
+#memberCard .mcList {
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  background: var(--panel);
+  color: var(--cream);
+  border: 1px solid rgba(241, 230, 210, 0.25);
+  border-radius: 999px;
+  padding: 7px 12px;
+  cursor: pointer;
+}
+#memberCard .mcKey span {
+  opacity: 0.6;
+  margin-left: 6px;
+}
+#memberCard .mcKey:hover,
+#memberCard .mcList:hover {
+  border-color: var(--lantern);
+}
+#memberCard .mcList.done {
+  cursor: default;
+  border-color: rgba(126, 155, 94, 0.5);
+  color: var(--moss);
+}
+#listCard {
+  position: relative;
+  width: min(380px, calc(100vw - 32px));
+  display: grid;
+  gap: 12px;
+  padding: 22px 20px 18px;
+  background: rgba(26, 18, 11, 0.97);
+  border: 1px solid rgba(255, 179, 94, 0.4);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  color: var(--cream);
+}
+#listCard .lcX {
+  justify-self: end;
+  margin: -8px -4px -4px 0;
+  background: none;
+  border: 0;
+  color: var(--cream);
+  opacity: 0.55;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+#listCard .lcKicker {
+  font-family: "DM Mono", monospace;
+  font-size: 10.5px;
+  letter-spacing: 0.24em;
+  color: var(--lantern);
+}
+#listCard .lcTitle {
+  font-family: "Shippori Mincho", serif;
+  font-weight: 800;
+  font-size: 24px;
+  color: var(--shoji);
+}
+#listCard .lcBody {
+  font-size: 14px;
+  line-height: 1.55;
+  opacity: 0.8;
+}
+#listCard .lcField {
+  display: flex;
+  gap: 8px;
+}
+#listCard input {
+  flex: 1;
+  min-width: 0;
+  font-size: 16px; /* 16px: no iOS zoom-on-focus */
+  background: #0f0a06;
+  color: var(--cream);
+  border: 1px solid rgba(241, 230, 210, 0.25);
+  border-radius: 999px;
+  padding: 10px 14px;
+}
+#listCard input:focus-visible {
+  outline: 2px solid var(--lantern);
+  outline-offset: 1px;
+}
+#listCard .lcField button {
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  background: var(--lantern);
+  color: var(--ink);
+  border: 0;
+  border-radius: 999px;
+  padding: 10px 14px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+#listCard .lcErr {
+  font-size: 13px;
+  color: #ff9a86;
+}
+#listCard .lcFine {
+  font-family: "DM Mono", monospace;
+  font-size: 10.5px;
+  opacity: 0.5;
+}

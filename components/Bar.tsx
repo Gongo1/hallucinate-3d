@@ -61,6 +61,8 @@ import { WorldMap } from "@/components/game/WorldMap";
 import { ArrivalBanner, Toasts, type Banner, type Toast } from "@/components/game/Hud";
 import { Door, type DoorPhase } from "@/components/game/Door";
 import * as sfx from "@/lib/bar/sfx";
+import { knockIn, myMembership, joinList, scoreAction, earnSetKey, type Membership } from "@/app/actions/members";
+import { memberTag } from "@/lib/members/tag";
 
 // The door ritual's timing (ms from the knock). Spec:
 // KB/Sombra/outputs/html/2026-09-29-hallucinate-door-ritual.html
@@ -191,7 +193,17 @@ function previewStart(t: Track): number {
   return Math.max(0, Math.min(Math.max(20, d * 0.33), d - 35));
 }
 
-export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
+export default function Bar({
+  initialShelves,
+  member = null,
+  invite = null,
+}: {
+  initialShelves: Shelf[];
+  /** the returning member's number (from the signed cookie), for the door */
+  member?: number | null;
+  /** a /k/ key waiting at the door: who sent it, or the number it hands over */
+  invite?: { from: number | null; claim: number | null } | null;
+}) {
   // ----- library: seeded server-side from Supabase (see lib/bar/data.ts) -----
   const [shelves, setShelves] = useState<Shelf[]>(initialShelves);
   const shelvesRef = useRef(shelves);
@@ -218,6 +230,12 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
   // runs once, as the interface comes in (the realm banner waits for the reveal)
   const onInsideRef = useRef<(() => void) | null>(null);
   const reducedMotion = useRef(false);
+  // ----- membership (numbers, keys, the Sombra list) -----
+  const [memberNo, setMemberNo] = useState<number | null>(member);
+  const [membership, setMembership] = useState<Membership | null>(null);
+  const [listOpen, setListOpen] = useState(false);
+  const listPendingRef = useRef(false); // first dig done: offer the list once it's put away
+  const memberToastRef = useRef<string | null>(null); // "You're #118" waits for the reveal
   const [prompt, setPrompt] = useState<string | null>(null);
   const [np, setNp] = useState<PlayerState>(EMPTY_NP);
   const [crate, setCrate] = useState<CrateState | null>(null);
@@ -772,10 +790,31 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
     };
     later(t.slideAt, gate);
 
+    // who is this? A returning member, a key at the door, or the next number.
+    // Never awaited: the audio above already started inside the tap.
+    void knockIn()
+      .then((r) => {
+        if (!r) return;
+        setMemberNo(r.number);
+        const msg = r.handoff
+          ? `This device is ${memberTag(r.number)} now.`
+          : r.isNew
+            ? `You're ${memberTag(r.number)}. Welcome to the room.`
+            : null;
+        if (!msg) return;
+        if (doorPhaseRef.current === "gone") gameRef.current.toast(msg, "gold", 5200);
+        else memberToastRef.current = msg;
+      })
+      .catch(() => {});
+
     // once inside: stamp the hub (its banner lands with the interface, not
     // behind the door); first-timers get pointed at the scout
     onInsideRef.current = () => {
       gameRef.current.onArrive("kissa");
+      setTimeout(() => {
+        if (memberToastRef.current) gameRef.current.toast(memberToastRef.current, "gold", 5200);
+        memberToastRef.current = null;
+      }, 900);
       if (firstRun)
         setTimeout(() => {
           if (!getProgress().talked.kissa)
@@ -819,12 +858,45 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
     },
     [toast]
   );
+  // the Sombra list: offered ONCE, after your first dig is put away (Austin: no
+  // pop-up barrage); always reachable from the menu and the fit panel after
+  useEffect(() => {
+    if (reveal || !listPendingRef.current) return;
+    listPendingRef.current = false;
+    let asked = false;
+    try {
+      asked = localStorage.getItem(LIST_ASKED) === "1";
+      localStorage.setItem(LIST_ASKED, "1");
+    } catch {}
+    if (!asked && memberNo) setTimeout(() => setListOpen(true), 700);
+  }, [reveal, memberNo]);
+
+  // your keys + list status, fresh each time the fit panel opens
+  useEffect(() => {
+    if (fitOpen && memberNo) void myMembership().then(setMembership).catch(() => {});
+  }, [fitOpen, memberNo]);
+
+  // stay for an ON AIR set (10 min) → +1 key, once per set (server-deduped)
+  useEffect(() => {
+    if (!started || !onAir.live || !memberNo) return;
+    const at = latestRoomRef.current?.liveStartedAt;
+    if (!at) return;
+    const t = setTimeout(() => {
+      void earnSetKey(at)
+        .then((r) => r.ok && toast("⚿ +1 key for staying for the set", "gold", 5200))
+        .catch(() => {});
+    }, 10 * 60_000);
+    return () => clearTimeout(t);
+  }, [started, onAir.live, memberNo, toast]);
+
   /** keep a record in your dex (from a crate / a cue), with the celebrations */
   const keep = useCallback(
     (t: Track, shelf: Shelf) => {
       const before = Object.keys(getProgress().dug).length;
       const res = markDug(t, shelf, shelf.room ?? "kissa", shelvesRef.current);
+      if (res.isNew) void scoreAction("keep", recordKey(t)).catch(() => {});
       if (res.badge) {
+        void scoreAction("badge", res.badge).catch(() => {});
         toast(`🏅 Realm badge — ${REALMS[res.badge]?.name ?? res.badge}`, "gold", 5200);
         giftRef.current({ kind: "badge" }, REALMS[res.badge]?.keeper.name ?? "the bar");
       }
@@ -838,6 +910,7 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
   giftRef.current = (t, from = "the bar") => {
     const g = rollGift(t);
     if (!g) return null;
+    void scoreAction("gift", g.id).catch(() => {});
     setGiftQueue((q) => [...q, { key: Date.now() + Math.random(), gift: g, from }]);
     setUnseenGifts((n) => n + 1);
     // behind a crate / the paste box: let them know it's waiting
@@ -886,7 +959,10 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
       const before = Object.keys(getProgress().dug).length;
       const res = markDug(pick.track, pick.shelf, r, shelvesRef.current);
       setReveal({ kind: "record", room: r, track: pick.track, shelf: pick.shelf, entry: res.entry, isNew: res.isNew });
+      void scoreAction("dig", recordKey(pick.track)).catch(() => {});
+      if (before === 0) listPendingRef.current = true; // their first dig: offer the list after
       if (res.badge) {
+        void scoreAction("badge", res.badge).catch(() => {});
         toast(`🏅 Realm badge — ${REALMS[res.badge]?.name ?? res.badge}`, "gold", 5200);
         giftRef.current({ kind: "badge" }, REALMS[res.badge]?.keeper.name ?? "the bar");
       }
@@ -906,6 +982,7 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
     onSecret: (id, first) => {
       if (first) {
         markSecret(id);
+        void scoreAction("secret", id).catch(() => {});
         const sec = SECRETS.find((x) => x.id === id);
         toast(`✦ Secret passage found — ${sec?.name ?? id}`, "gold", 5200);
         giftRef.current({ kind: "secret" }, sec?.name ?? "a secret passage");
@@ -1063,11 +1140,17 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
     ? onAir.dj
       ? `${onAir.dj} is spinning`
       : "Live from the booth"
-    : rosterKnown && inside === 0
-      ? "The room is yours"
-      : returning
-        ? "Welcome back"
-        : null;
+    : invite?.claim
+      ? `${memberTag(invite.claim)} is waiting for you`
+      : invite?.from
+        ? `${memberTag(invite.from)} saved you a key`
+        : member
+          ? `Welcome back, ${memberTag(member)}`
+          : rosterKnown && inside === 0
+            ? "The room is yours"
+            : returning
+              ? "Welcome back"
+              : null;
   const wrapClass = [dialogue ? "dlgOpen" : "", chrome ? `chrome-${chrome}` : ""]
     .filter(Boolean)
     .join(" ");
@@ -1149,6 +1232,18 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
             <span className="mapPillCount">
               {REALM_ORDER.filter((r) => progress.visited[r]).length}/{REALM_ORDER.length}
             </span>
+          </button>
+        )}
+        {started && memberNo && (
+          <button
+            id="listBtn"
+            onClick={() => {
+              setListOpen(true);
+              setMenuOpen(false);
+            }}
+            title="the Sombra list: live sets, fresh drops, Austin nights"
+          >
+            ☉☽ the list
           </button>
         )}
         {started && (
@@ -1339,6 +1434,19 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           fit={fit}
           onChange={applyFit}
           onClose={() => setFitOpen(false)}
+          membership={membership}
+          onOpenList={() => {
+            setFitOpen(false);
+            setListOpen(true);
+          }}
+        />
+      )}
+
+      {listOpen && (
+        <ListCard
+          memberNo={memberNo}
+          onClose={() => setListOpen(false)}
+          onJoined={() => setMembership((m) => (m ? { ...m, onList: true } : m))}
         />
       )}
 
@@ -1390,6 +1498,128 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           onFit={() => setFitOpen(true)}
         />
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------ membership */
+const LIST_ASKED = "hallu-list-asked";
+
+/** In the fit panel: your number, your keys (copy a link to bring someone in),
+ *  who you've brought in, and the Sombra list. */
+function MemberCard({ m, onOpenList }: { m: Membership; onOpenList: () => void }) {
+  const [copied, setCopied] = useState<string | null>(null);
+  const open = m.keys.filter((k) => !k.used);
+  const copy = (code: string) => {
+    const url = `${location.origin}/k/${code}`;
+    navigator.clipboard
+      .writeText(url)
+      .then(() => setCopied(code))
+      .catch(() => window.prompt("Copy your key link:", url));
+  };
+  return (
+    <div id="memberCard">
+      <div className="mcHead">
+        <span className="mcNum">{memberTag(m.number)}</span>
+        <span className="mcSub">
+          member{m.broughtIn > 0 ? ` · brought in ${m.broughtIn}` : ""}
+        </span>
+      </div>
+      <div className="mcLabel">
+        {`Your keys: send one to bring someone in. They'll see "${memberTag(m.number)} saved you a key".`}
+      </div>
+      {open.length ? (
+        <div className="mcKeys">
+          {open.map((k) => (
+            <button key={k.code} type="button" className="mcKey" onClick={() => copy(k.code)}>
+              ⚿ {k.code} <span>{copied === k.code ? "link copied" : "copy link"}</span>
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="mcLabel">All your keys are out. Stay for an ON AIR set to earn another.</div>
+      )}
+      {m.onList ? (
+        <div className="mcList done">✓ On the Sombra list</div>
+      ) : (
+        <button type="button" className="mcList" onClick={onOpenList}>
+          ☉☽ Stay close to the room: join the list
+        </button>
+      )}
+    </div>
+  );
+}
+
+/** "Stay close to the room." The one ask: shown once after your first dig, and
+ *  from the menu / fit panel after that. */
+function ListCard({
+  memberNo,
+  onClose,
+  onJoined,
+}: {
+  memberNo: number | null;
+  onClose: () => void;
+  onJoined: () => void;
+}) {
+  const [email, setEmail] = useState("");
+  const [state, setState] = useState<"idle" | "busy" | "done" | "error">("idle");
+  const [msg, setMsg] = useState("");
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setState("busy");
+    const r = await joinList(email).catch(() => ({ ok: false, message: "Couldn't save that just now. Try again in a moment." }));
+    if (r.ok) {
+      setState("done");
+      onJoined();
+      setTimeout(onClose, 2200);
+    } else {
+      setState("error");
+      setMsg(r.message ?? "Couldn't save that just now.");
+    }
+  };
+  return (
+    <div
+      className="overlay open"
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <form id="listCard" onSubmit={submit}>
+        <button type="button" className="lcX" onClick={onClose}>
+          not now ✕
+        </button>
+        <div className="lcKicker">☉☽ THE SOMBRA LIST</div>
+        <div className="lcTitle">Stay close to the room</div>
+        {state === "done" ? (
+          <div className="lcBody">{"You're on the list. We'll keep you posted."}</div>
+        ) : (
+          <>
+            <div className="lcBody">
+              Live sets, fresh drops, and the good nights in Austin, Texas. A few emails a month, never spam.
+            </div>
+            <div className="lcField">
+              <input
+                id="listEmail"
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                placeholder="you@email.com"
+                aria-label="Your email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
+              <button type="submit" disabled={state === "busy"}>
+                {state === "busy" ? "…" : "Keep me posted"}
+              </button>
+            </div>
+            {state === "error" && <div className="lcErr">{msg}</div>}
+          </>
+        )}
+        <div className="lcFine">
+          {memberNo ? `Saved with member ${memberTag(memberNo)} · ` : ""}unsubscribe any time
+        </div>
+      </form>
     </div>
   );
 }
@@ -2003,10 +2233,14 @@ function FitPanel({
   fit,
   onChange,
   onClose,
+  membership,
+  onOpenList,
 }: {
   fit: Fit;
   onChange: (f: Fit) => void;
   onClose: () => void;
+  membership: Membership | null;
+  onOpenList: () => void;
 }) {
   return (
     <div
@@ -2028,6 +2262,8 @@ function FitPanel({
         <div id="fitStage">
           <AvatarPreview fit={fit} size={150} animate />
         </div>
+
+        {membership && <MemberCard m={membership} onOpenList={onOpenList} />}
 
         <div className="fitRow">
           <span className="fitLabel">skin</span>

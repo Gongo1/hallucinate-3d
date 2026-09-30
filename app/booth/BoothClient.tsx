@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { boothLogin, boothLogout, boothCommand } from "@/app/actions/booth";
+import { boothLogin, boothLogout, boothCommand, boothTakeNumber, boothHandoffLink } from "@/app/actions/booth";
 import type { AdminCmd } from "@/lib/booth/commands";
 
 // The booth — owner's god-mode panel. Authority is ENTIRELY server-side: this
@@ -58,7 +58,26 @@ export default function BoothClient({ initialOwner }: { initialOwner: boolean })
           <button className="boothBtn primary" onClick={login} disabled={busy}>
             {busy ? "…" : "enter the booth"}
           </button>
-          {msg && <div className="boothMsg">{msg}</div>}
+          <div className="boothSub" style={{ marginTop: 18 }}>founding members · #001 Gongo · #002 Elixir Pau</div>
+        <div className="boothGrid">
+          <button
+            className="boothBtn"
+            onClick={async () => setMsg((await boothTakeNumber(1)).ok ? "this device is #001" : "couldn't set #001")}
+          >
+            ☉ MAKE THIS DEVICE #001
+          </button>
+          <button
+            className="boothBtn"
+            onClick={async () => {
+              const r = await boothHandoffLink(2);
+              setMsg(r.ok && r.path ? `send Paula this one-time link: ${location.origin}${r.path}` : "couldn't make the link");
+            }}
+          >
+            ☽ HAND-OFF LINK FOR #002
+          </button>
+        </div>
+
+        {msg && <div className="boothMsg">{msg}</div>}
           <Link className="boothBack" href="/">← back to the bar</Link>
         </div>
       </div>

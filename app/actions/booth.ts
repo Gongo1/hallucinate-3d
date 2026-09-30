@@ -9,6 +9,8 @@ import {
   verifyToken,
 } from "@/lib/booth/auth";
 import { ADMIN_EVENT, BAR_CHANNEL, type AdminCmd } from "@/lib/booth/commands";
+import { MEMBER_COOKIE, MEMBER_MAX_AGE, mintMemberCookie, newKeyCode } from "@/lib/members/auth";
+import { adminClient } from "@/lib/members/store";
 
 // God-mode authority lives HERE, on the server. The client can call these, but
 // every privileged action re-verifies the signed owner cookie before doing
@@ -76,4 +78,41 @@ export async function boothCommand(cmd: AdminCmd): Promise<{ ok: boolean }> {
     }),
   });
   return { ok: res.status === 202 || res.ok };
+}
+
+// ----- founding members (owner only) -----
+// #001 is Gongo, #002 is Elixir Pau: reserved rows that nobody can knock into.
+// The owner takes #001 on this device, and makes a one-time hand-off link that
+// gives #002 to whichever phone opens it.
+
+/** Make THIS device member #n (a founding number). */
+export async function boothTakeNumber(n: number): Promise<{ ok: boolean }> {
+  const jar = await cookies();
+  if (!verifyToken(jar.get(BOOTH_COOKIE)?.value)) return { ok: false };
+  const sb = adminClient();
+  if (!sb) return { ok: false };
+  const { data } = await sb.from("hallu_members").select("id").eq("number", n).maybeSingle();
+  const value = data ? mintMemberCookie(data.id as string) : null;
+  if (!value) return { ok: false };
+  jar.set(MEMBER_COOKIE, value, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: MEMBER_MAX_AGE,
+  });
+  return { ok: true };
+}
+
+/** A one-time link that hands member #n to whoever opens it. */
+export async function boothHandoffLink(n: number): Promise<{ ok: boolean; path?: string }> {
+  const jar = await cookies();
+  if (!verifyToken(jar.get(BOOTH_COOKIE)?.value)) return { ok: false };
+  const sb = adminClient();
+  if (!sb) return { ok: false };
+  const { data } = await sb.from("hallu_members").select("id").eq("number", n).maybeSingle();
+  if (!data) return { ok: false };
+  const code = newKeyCode();
+  const { error } = await sb.from("hallu_keys").insert({ code, claims_member: data.id });
+  return error ? { ok: false } : { ok: true, path: `/k/${code}` };
 }
