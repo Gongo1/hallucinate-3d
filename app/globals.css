@@ -3420,3 +3420,68 @@ select,
   touch-action: manipulation;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
+
+/* dig preview — "you're hearing this record, not the room" (above the overlays) */
+#previewChip {
+  position: fixed;
+  left: 50%;
+  bottom: calc(22px + env(safe-area-inset-bottom, 0px));
+  transform: translateX(-50%);
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100vw - 32px);
+  padding: 7px 8px 7px 14px;
+  background: rgba(18, 13, 8, 0.92);
+  border: 1px solid rgba(255, 179, 94, 0.45);
+  border-radius: 999px;
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  color: var(--cream);
+  white-space: nowrap;
+}
+#previewChip .pvDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--lantern);
+  animation: pvPulse 0.98s ease-in-out infinite;
+}
+@keyframes pvPulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+#previewChip .pvText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+#previewChip .pvText b {
+  font-weight: 500;
+  color: var(--lantern);
+}
+#previewChip .pvLeft {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.7;
+}
+#previewChip button {
+  font: inherit;
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  background: transparent;
+  color: var(--cream);
+  border: 1px solid rgba(241, 230, 210, 0.3);
+  border-radius: 999px;
+  padding: 5px 10px;
+  cursor: pointer;
+}
+#previewChip button:hover {
+  border-color: var(--lantern);
+}
+@media (prefers-reduced-motion: reduce) {
+  #previewChip .pvDot {
+    animation: none;
+  }
+}

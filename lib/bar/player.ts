@@ -24,6 +24,8 @@ export interface PlayerState {
   radio: boolean;
   /** autoplay was blocked (mobile policy) — the UI shows a tap-to-listen pill */
   blocked: boolean;
+  /** a record you're previewing while digging (just you; the room plays on) */
+  preview: { title: string; artist: string; until: number } | null;
 }
 
 interface PlayerOpts {
@@ -35,6 +37,8 @@ interface PlayerOpts {
   onStationEnded?: () => void;
   /** the active player reported the track's true length (s) — duration backstop */
   onDurationKnown?: (seconds: number) => void;
+  /** a dig preview finished — the host of the player puts you back in the room */
+  onPreviewEnd?: () => void;
 }
 
 /* Minimal shapes for the two external player SDKs (loaded at runtime). */
@@ -89,6 +93,7 @@ export class BarPlayer {
     visible: false,
     radio: false,
     blocked: false,
+    preview: null,
   };
 
   private yt: YTPlayer | null = null;
@@ -142,6 +147,62 @@ export class BarPlayer {
     } catch {}
   }
 
+  // ----- dig previews: 30s of a record while you browse, then back to the room.
+  // They play through the SAME players as the room: on iPhone those are already
+  // unlocked by the knock, while a second player would need its own tap.
+  private previewTimer: ReturnType<typeof setTimeout> | null = null;
+
+  /** Preview `track` from `startSec` for `ms` (just you — the room plays on and
+   *  you rejoin it at its live spot afterwards). Skipped while you've muted. */
+  startPreview(track: Track, startSec: number, ms = 30_000) {
+    if (!track.ytId && !track.scUrl) return;
+    if (!this.previewTimer && !this.state.playing) return; // muted / blocked: stay quiet
+    if (this.previewTimer) clearTimeout(this.previewTimer);
+    this.previewTimer = setTimeout(() => this.endPreview(), ms);
+    this.state.preview = { title: track.title, artist: track.artist, until: Date.now() + ms };
+    this.reportedDuration = true; // a preview's length is not the room track's
+    this.primed = null;
+    try {
+      if (track.ytId) {
+        this.sc?.pause();
+        this.state.source = "yt";
+        if (this.ytReady && this.yt) {
+          this.yt.loadVideoById({ videoId: track.ytId, startSeconds: Math.max(0, startSec) });
+          this.yt.playVideo();
+        }
+      } else if (track.scUrl) {
+        this.yt?.pauseVideo();
+        this.state.source = "sc";
+        this.pendingSeekMs = Math.max(0, startSec) * 1000;
+        this.playSc(track.scUrl);
+      }
+    } catch {}
+    this.fadeIn();
+    this.emit();
+  }
+
+  /** Stop previewing and hand back to the room (onPreviewEnd rejoins it). */
+  endPreview() {
+    if (!this.previewTimer) return;
+    clearTimeout(this.previewTimer);
+    this.previewTimer = null;
+    this.state.preview = null;
+    this.emit();
+    this.opts.onPreviewEnd?.();
+  }
+
+  /** Rejoin the room's track at `offsetSec` — a forced reload (after a preview
+   *  the players hold the previewed record, so playStation's same-track skip
+   *  must not apply). */
+  rejoin(track: Track, offsetSec: number) {
+    this.station = true;
+    this.queue = [];
+    this.state.queueLen = 0;
+    this.state.radio = true;
+    this.pendingSeekMs = Math.max(0, offsetSec) * 1000;
+    this.playStationCurrent(track);
+  }
+
   /** Door ritual: swell the held track to full volume over `ms`. */
   swell(ms: number) {
     const a = this.arrival;
@@ -165,6 +226,7 @@ export class BarPlayer {
   }
 
   destroy() {
+    if (this.previewTimer) clearTimeout(this.previewTimer);
     if (this.progressTimer) clearInterval(this.progressTimer);
     if (this.fadeTimer) clearInterval(this.fadeTimer);
     if (this.blockTimer) clearTimeout(this.blockTimer);
@@ -201,6 +263,12 @@ export class BarPlayer {
   togglePlay() {
     // Pause/resume is always LOCAL — on the station it just mutes you; the bar
     // keeps playing for everyone else.
+    if (this.previewTimer) {
+      // mid-preview the players hold the previewed record: stop it and rejoin
+      // the room rather than pausing (or later resuming) the wrong track
+      this.endPreview();
+      return;
+    }
     if (!this.state.track) return;
     if (this.state.source === "yt" && this.ytReady && this.yt) {
       if (this.state.playing) this.yt.pauseVideo();
@@ -245,6 +313,8 @@ export class BarPlayer {
    * track ends we report it (onStationEnded) and the host drives the next one.
    */
   playStation(track: Track, offsetSec = 0) {
+    // mid-preview: leave it playing; onPreviewEnd rejoins the room at its live spot
+    if (this.previewTimer) return;
     // Same track already audibly near this offset — adopt the state without a
     // reload. Covers the mobile in-gesture start racing the first room broadcast
     // (a reload here would stutter, and on iOS could re-trip the autoplay gate).
@@ -514,6 +584,12 @@ export class BarPlayer {
 
   /** A track finished (or errored). Station → tell the host; queue → auto-next. */
   private onTrackEnded() {
+    if (this.previewTimer) {
+      // the previewed record ran out (or failed) — back to the room, never
+      // mistake it for the room's track ending
+      this.endPreview();
+      return;
+    }
     if (this.station) {
       this.opts.onStationEnded?.();
       return;
@@ -568,7 +644,7 @@ export class BarPlayer {
 
   /* ----------------------------------------------------------- progress */
   private tickProgress() {
-    if (!this.state.playing) return;
+    if (!this.state.playing || this.previewTimer) return; // a preview isn't the room's progress
     if (this.state.source === "yt" && this.ytReady && this.yt) {
       try {
         const d = this.yt.getDuration();

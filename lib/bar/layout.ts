@@ -52,14 +52,18 @@ export const KISSA = {
     { t: "stone", x: 170, y: ROOM.h - 110 },
   ] as { t: "bamboo" | "maple" | "stone"; x: number; y: number }[],
 };
-/** Featured crates in the Listening Room, front and centre under the big sign
- *  (by shelf slug). Owner-curated — see CURATED_CRATES. */
+/** the weekly fresh-drop crate: new house records every Friday, owner-approved */
+export const THIS_WEEK = "this-week";
+/** The Listening Room's ONLY crates (Austin, 2026-09-29), front and centre under
+ *  the big sign (by shelf slug): Gongo's sets, this week's drop, and the Sombra
+ *  Selection. Owner-curated — see CURATED_CRATES. */
 export const KISSA_FEATURED: Record<string, DigSpot> = {
-  gongo: { x: 470, y: 190, label: "left" },
-  "sombra-selection": { x: 690, y: 190, label: "right" },
+  gongo: { x: 390, y: 190, label: "left" },
+  [THIS_WEEK]: { x: 580, y: 190, label: "right" },
+  "sombra-selection": { x: 770, y: 190, label: "right" },
 };
 /** crates only the owner (a /booth session) can add records to */
-export const CURATED_CRATES: ReadonlySet<string> = new Set(["gongo", "sombra-selection"]);
+export const CURATED_CRATES: ReadonlySet<string> = new Set(["gongo", "sombra-selection", THIS_WEEK]);
 
 /** the seated pair on the tatami + the kissa master behind the bar */
 export const KISSA_SEATED: XY[] = [

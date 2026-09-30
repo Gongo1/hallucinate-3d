@@ -180,7 +180,16 @@ const EMPTY_NP: PlayerState = {
   visible: false,
   radio: false,
   blocked: false,
+  preview: null,
 };
+
+// Where a dig preview starts: past the intro (a third in, house intros run
+// long), leaving room for the 30s; unknown lengths start a minute in.
+function previewStart(t: Track): number {
+  const d = t.durationSeconds;
+  if (!d) return 60;
+  return Math.max(0, Math.min(Math.max(20, d * 0.33), d - 35));
+}
 
 export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
   // ----- library: seeded server-side from Supabase (see lib/bar/data.ts) -----
@@ -362,6 +371,13 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
       onStationEnded: () => presenceRef.current?.trackEnded(),
       // duration backstop: host auto-advances past stale long / unresolved tracks
       onDurationKnown: (sec) => presenceRef.current?.durationKnown(sec),
+      // a dig preview ended — rejoin the room wherever it's got to by now
+      onPreviewEnd: () => {
+        const s = latestRoomRef.current;
+        if (!s?.now) return;
+        playerRef.current?.rejoin(s.now, Math.max(0, (Date.now() - s.startedAt) / 1000));
+        presenceRef.current?.notePlayed(s.startedAt);
+      },
     });
     playerRef.current = player;
 
@@ -648,6 +664,15 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
     arrivalTimers.current.forEach(clearTimeout);
     arrivalTimers.current = [];
   }, []);
+
+  // ----- dig previews: hear 30s of the record you're looking at (Austin,
+  // 2026-09-29). Flipping a crate or turning up a dig plays it just for you;
+  // close it and you're back in the room at its live spot.
+  const previewing = crate ? crate.shelf.records[crate.idx] : reveal?.kind === "record" ? reveal.track : null;
+  useEffect(() => {
+    if (previewing) playerRef.current?.startPreview(previewing, previewStart(previewing));
+    else playerRef.current?.endPreview();
+  }, [previewing]);
 
   // a ritual in flight when the bar unmounts shouldn't fire into a dead tree
   useEffect(() => clearArrival, [clearArrival]);
@@ -1170,6 +1195,10 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
         </button>
       )}
 
+      {np.preview && (
+        <PreviewChip preview={np.preview} onStop={() => playerRef.current?.endPreview()} />
+      )}
+
       {started && onAir.live && (
         <div id="onAirBanner">
           🔴 ON AIR — {onAir.dj ?? "THE OWNER"} is spinning · the room is listening
@@ -1361,6 +1390,36 @@ export default function Bar({ initialShelves }: { initialShelves: Shelf[] }) {
           onFit={() => setFitOpen(true)}
         />
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------ dig preview */
+// "you're hearing this record, not the room" — with the seconds left and a way
+// straight back. Sits above the crate / dig overlays.
+function PreviewChip({
+  preview,
+  onStop,
+}: {
+  preview: NonNullable<PlayerState["preview"]>;
+  onStop: () => void;
+}) {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, []);
+  const left = Math.max(0, Math.ceil((preview.until - now) / 1000));
+  return (
+    <div id="previewChip" role="status">
+      <span className="pvDot" />
+      <span className="pvText">
+        previewing · <b>{preview.artist || preview.title}</b>
+      </span>
+      <span className="pvLeft">0:{String(left).padStart(2, "0")}</span>
+      <button type="button" onClick={onStop}>
+        back to the room
+      </button>
     </div>
   );
 }
@@ -1809,7 +1868,7 @@ function Ingest({
                 {o.slug && CURATED_CRATES.has(o.slug) ? " — curated (owner)" : ""}
               </option>
             ))}
-            <option value={NEW_SHELF}>＋ new shelf…</option>
+            <option value={NEW_SHELF}>＋ new shelf… — owner</option>
           </select>
           {target === NEW_SHELF && (
             <>

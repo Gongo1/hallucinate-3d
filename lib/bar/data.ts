@@ -2,6 +2,8 @@ import "server-only";
 import { getServerClient } from "@/lib/supabase/server";
 import type { Shelf, Track } from "./types";
 import { FULL_SET_CRATES, isFullSet } from "./flow";
+import { THIS_WEEK } from "./layout";
+import { weeklyShuffle } from "./week";
 
 // Retired + unplayable rows — hidden until they're deleted in Supabase (the anon
 // key can't delete). 2026-09-29.
@@ -80,9 +82,18 @@ export async function loadShelves(): Promise<Shelf[]> {
     ingest: s.is_ingest || undefined,
     room: s.room ?? "kissa",
     energy: s.energy ?? 3,
-    records: (s.records ?? [])
-      .filter((r) => keep(s, r))
-      .sort((a, b) => a.sort - b.sort)
-      .map((r) => (isFullSet(s.slug ?? undefined, r.duration_seconds) ? { ...toTrack(r), fullSet: true } : toTrack(r))),
+    records: weeklyOrder(
+      s,
+      (s.records ?? [])
+        .filter((r) => keep(s, r))
+        .sort((a, b) => a.sort - b.sort)
+        .map((r) => (isFullSet(s.slug ?? undefined, r.duration_seconds) ? { ...toTrack(r), fullSet: true } : toTrack(r)))
+    ),
   }));
+}
+
+// Crates reshuffle every drop-week so flipping through never opens on the same
+// record (Austin, 2026-09-29). THIS WEEK keeps its curated order.
+function weeklyOrder(s: ShelfRow, records: Track[]): Track[] {
+  return s.slug === THIS_WEEK ? records : weeklyShuffle(records, s.id);
 }

@@ -76,9 +76,16 @@ export async function ingestLinks(input: {
       if (!verifyToken(jar.get(BOOTH_COOKIE)?.value))
         return {
           ok: false,
-          message: "That crate is curated by Sombra — drop your links in 新着 or start your own shelf.",
+          message: "That crate is curated by Sombra — drop your links in 新着 NEW ARRIVALS.",
         };
     }
+  }
+  // New crates are owner-only too (Austin, 2026-09-29): the rooms stay curated,
+  // and visitors' finds go to 新着 NEW ARRIVALS (in the Archive).
+  if (input.target.kind === "new") {
+    const jar = await cookies();
+    if (!verifyToken(jar.get(BOOTH_COOKIE)?.value))
+      return { ok: false, message: "New crates are made by Sombra — drop your links in 新着 NEW ARRIVALS." };
   }
   // the one cap exception: full DJ sets filed into a FULL_SET_CRATES crate
   const fullSets = !!targetSlug && FULL_SET_CRATES.has(targetSlug);
@@ -132,6 +139,7 @@ export async function ingestLinks(input: {
         sort,
         is_ingest: false,
         energy: clampEnergy(input.target.energy),
+        room: "garden", // the Listening Room holds only its three featured crates
       })
       .select("id, label, color, is_ingest, energy")
       .single();
