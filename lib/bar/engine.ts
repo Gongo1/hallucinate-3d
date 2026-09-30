@@ -567,7 +567,7 @@ export class BarEngine {
     // the weekly board: read it standing just in front (it's on the wall)
     this.zones.push({ type: "board", cx: KISSA_BOARD.x, cy: KISSA_BOARD.readY, r: 70 });
     // the drop box: a small solid you walk up to (suggest a record)
-    this.solid(KISSA_DROPBOX.x - 16, KISSA_DROPBOX.y - 12, 32, 24);
+    this.solid(KISSA_DROPBOX.x - 19, KISSA_DROPBOX.y - 12, 38, 24);
     this.zones.push({ type: "dropbox", cx: KISSA_DROPBOX.x, cy: KISSA_DROPBOX.readY, r: 52 });
     // Rave portal: the doorway frame is solid (you can't walk into the wall); its
     // prompt/charge zone sits in FRONT of the rift (to the right, into the room),

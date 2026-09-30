@@ -197,29 +197,28 @@ export const buildKissa: RoomBuilder = ({ room }) => {
   const D = KISSA_DROPBOX;
   const drop = new THREE.Group();
   drop.position.set(D.x, 0, D.y);
-  const dBody = box(30, 44, 22, "#6e4d2c");
-  dBody.position.y = 22;
-  const dFace = box(24, 30, 1.5, "#c0432f"); // vermilion front
-  dFace.position.set(0, 26, 11.5);
-  const dSlot = box(16, 2.2, 1, "#1a120a");
-  dSlot.position.set(0, 34, 12.4);
-  const dCap = box(34, 4, 26, "#4f3720");
-  dCap.position.y = 46;
-  const dLabel = billboard(96, 30, (c, w, h) => {
-    c.fillStyle = "rgba(26,18,10,.88)";
-    rr(c, 1, 1, w - 2, h - 2, 6);
-    c.fill();
+  const dBody = box(38, 54, 24, "#6e4d2c");
+  dBody.position.y = 27;
+  // the label is painted on the vermilion front (low enough that the hanging
+  // lantern in front never covers it)
+  const dFace = panel(32, 40, (c, w, h) => {
+    c.fillStyle = "#c0432f";
+    c.fillRect(0, 0, w, h);
+    c.fillStyle = "#1a120a";
+    c.fillRect(6, 7, w - 12, 3); // the slot
     c.textAlign = "center";
     c.textBaseline = "middle";
-    c.fillStyle = "#ffce8c";
-    c.font = "500 10px 'DM Mono', monospace";
-    c.fillText("ADD RECORDS", w / 2, 11);
-    c.fillStyle = "rgba(241,230,210,.7)";
-    c.font = "8px 'DM Mono', monospace";
-    c.fillText("投函 · reviewed weekly", w / 2, 22);
-  }, 60);
-  dLabel.position.y = 64;
-  drop.add(dBody, dFace, dSlot, dCap, dLabel);
+    c.fillStyle = "#f3e6c8";
+    c.font = "700 9px 'Shippori Mincho', serif";
+    c.fillText("投函", w / 2, 18);
+    c.font = "500 5px 'DM Mono', monospace";
+    c.fillText("ADD", w / 2, 27);
+    c.fillText("RECORDS", w / 2, 33);
+  }, 32, 4, true);
+  dFace.position.set(0, 29, 12.2);
+  const dCap = box(42, 4, 28, "#4f3720");
+  dCap.position.y = 56;
+  drop.add(dBody, dFace, dCap);
   drop.userData.pick = { kind: "dropbox" };
   g.add(drop);
 
