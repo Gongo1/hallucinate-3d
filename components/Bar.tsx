@@ -256,6 +256,12 @@ export default function Bar({
   // suggests them (the drop box), reviewed weekly into THIS WEEK / the Selection
   const [submitOpen, setSubmitOpen] = useState(false);
   const openAddRef = useRef<() => void>(() => {});
+  // the top bar: Now Playing · Discover · Contribute · World · ? (desktop opens
+  // one compact panel; the phone puts all of them in the ☰ sheet)
+  const [nav, setNav] = useState<NavKey | null>(null);
+  const [radioOpen, setRadioOpen] = useState(false); // the omakase counter's story
+  const [welcome, setWelcome] = useState(false); // first-visit prompt (non-modal)
+  const welcomeDueRef = useRef(false); // the welcome is the ONE first-visit greeting
   openAddRef.current = () => (owner ? setIngestOpen(true) : setSubmitOpen(true));
   const countedPlayRef = useRef(0); // the startedAt of the last track this host counted
   const [prompt, setPrompt] = useState<string | null>(null);
@@ -342,7 +348,7 @@ export default function Bar({
     if (giftKey) giftShownAtRef.current = performance.now();
   }, [giftKey]);
   overlayOpenRef.current =
-    crate !== null || ingestOpen || dialogue !== null || dexOpen || mapOpen || giftShowing !== null || boardOpen || masterOpen || submitOpen;
+    crate !== null || ingestOpen || dialogue !== null || dexOpen || mapOpen || giftShowing !== null || boardOpen || masterOpen || submitOpen || radioOpen;
   const typingRef = useRef(false);
 
   // ----- dom + instance refs -----
@@ -446,6 +452,8 @@ export default function Bar({
           setMasterOpen(true);
           refreshBoardRef.current();
         },
+        // the omakase counter: how Sombra Radio works
+        onOpenRadio: () => setRadioOpen(true),
         // walked up to the whiteboard: zoom in on this week's board
         onOpenBoard: () => {
           setBoardOpen(true);
@@ -474,6 +482,8 @@ export default function Bar({
           setBoardOpen(false);
           setMasterOpen(false);
           setSubmitOpen(false);
+          setRadioOpen(false);
+          setNav(null);
         },
         isOverlayOpen: () => overlayOpenRef.current,
         isPlaying: () => playingRef.current,
@@ -738,6 +748,16 @@ export default function Bar({
     return () => clearTimeout(t);
   }, [previewing]);
 
+  // a desktop panel closes when you click back into the world
+  useEffect(() => {
+    if (!nav) return;
+    const off = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest?.("#topbar")) setNav(null);
+    };
+    addEventListener("pointerdown", off, true);
+    return () => removeEventListener("pointerdown", off, true);
+  }, [nav]);
+
   // ----- the weekly board: fetched once you're inside, then every minute; the
   // whiteboard in the Listening Room is redrawn from it
   refreshBoardRef.current = () => {
@@ -866,24 +886,30 @@ export default function Bar({
             ? `You're ${memberTag(r.number)}. Welcome to the room.`
             : null;
         if (!msg) return;
-        if (doorPhaseRef.current === "gone") gameRef.current.toast(msg, "gold", 5200);
-        else memberToastRef.current = msg;
+        if (doorPhaseRef.current === "gone") {
+          if (!welcomeDueRef.current) gameRef.current.toast(msg, "gold", 5200);
+        } else memberToastRef.current = msg;
       })
       .catch(() => {});
 
+    // first visit: the welcome prompt is the one greeting (your number rides in
+    // it; no separate toast, no realm banner) — Austin: no pop-up pile-ups
+    if (firstRun) {
+      try {
+        welcomeDueRef.current = localStorage.getItem(WELCOME_KEY) !== "1";
+      } catch {
+        welcomeDueRef.current = true;
+      }
+    }
     // once inside: stamp the hub (its banner lands with the interface, not
     // behind the door); first-timers get pointed at the scout
     onInsideRef.current = () => {
       gameRef.current.onArrive("kissa");
       setTimeout(() => {
-        if (memberToastRef.current) gameRef.current.toast(memberToastRef.current, "gold", 5200);
+        if (memberToastRef.current && !welcomeDueRef.current) gameRef.current.toast(memberToastRef.current, "gold", 5200);
         memberToastRef.current = null;
       }, 900);
-      if (firstRun)
-        setTimeout(() => {
-          if (!getProgress().talked.kissa)
-            gameRef.current.toast("Talk to Rio (!) — or open a crate and have a listen", "hint", 7000);
-        }, 1750);
+      if (welcomeDueRef.current) setTimeout(() => setWelcome(true), 600);
     };
   }, [later, openDoor]);
 
@@ -928,6 +954,8 @@ export default function Bar({
   useEffect(() => {
     if (crate) {
       setToasts((t) => t.filter((x) => x.tone !== "hint"));
+      setWelcome(false);
+      welcomeDueRef.current = false;
       if (crate.shelf.records.length) listPendingRef.current = true;
       return;
     }
@@ -1014,7 +1042,8 @@ export default function Bar({
       // phone: small screen + frequent room changes, so only a realm's FIRST
       // visit gets the sign, and no "stamped" toast (the sign already says it)
       const touch = document.body.classList.contains("touch");
-      if (first || !touch) setBanner({ key: Date.now(), room: r, first, stamped });
+      const quiet = r === "kissa" && welcomeDueRef.current; // the welcome greets instead
+      if ((first || !touch) && !quiet) setBanner({ key: Date.now(), room: r, first, stamped });
       if (first && r !== "kissa") {
         if (!touch) toast(`✦ New realm stamped — ${stamped}/${REALM_ORDER.length}`, "green");
         giftRef.current({ kind: "visit" }, REALMS[r]?.name ?? "the bar");
@@ -1140,6 +1169,7 @@ export default function Bar({
       if (!crate || !p || !p.canCue()) return;
       const r = crate.shelf.records[idx];
       p.cue(r);
+      gameRef.current.toast(`⤵ Up next for the whole room: ${r.title}`, "green", 3600);
       // cueing a record keeps it in your dex
       if (keep(r, crate.shelf).isNew) giftRef.current({ kind: "keep" });
       refreshFlowUi();
@@ -1180,6 +1210,101 @@ export default function Bar({
   const myColor = presenceRef.current?.color;
   const soloMode = roster <= 1;
 
+  // what each top-bar destination holds (a desktop panel, or a section of the
+  // phone's sheet). Every action closes the menu and does one clear thing.
+  const go = (fn: () => void) => () => {
+    fn();
+    setNav(null);
+    setMenuOpen(false);
+  };
+  const saved = Object.keys(progress.dug).length;
+  const navContent = (k: NavKey) => {
+    if (k === "now")
+      return (
+        <>
+          <p className="navLead">One record plays for the whole venue. Everyone here hears it together.</p>
+          <div className="navFact">
+            {Math.max(roster, 1)} listening · {phaseLabel ?? "live"}
+            {onAir.live ? ` · ON AIR: ${onAir.dj ?? "a Sombra DJ"}` : ""}
+          </div>
+          <div className="navNext">
+            <span>Up next</span>
+            {cue.length ? (
+              cue.slice(0, 3).map((c, i) => (
+                <em key={trackKey(c.track) + i}>
+                  {c.track.artist ? `${c.track.artist} — ` : ""}
+                  {c.track.title}
+                </em>
+              ))
+            ) : (
+              <em className="dim">Nothing cued: the radio picks by the hour.</em>
+            )}
+          </div>
+          <button className="navAct" onClick={go(openAdded)}>
+            Recently added{unseenAdds > 0 ? ` · ${unseenAdds} new` : ""}
+          </button>
+          <button className="navAct" onClick={go(() => setRadioOpen(true))}>
+            How the radio works <span>its home is the Omakase counter</span>
+          </button>
+        </>
+      );
+    if (k === "discover")
+      return (
+        <>
+          <div className="navHint">Dig: walk up to any crate and hear 30s of each record.</div>
+          <button className="navAct" onClick={go(() => { setMapOpen(false); setDexOpen(true); setUnseenGifts(0); })}>
+            My crate <span>{saved} saved · C</span>
+          </button>
+          <button className="navAct" onClick={go(() => { setDexOpen(false); setMapOpen(true); })}>
+            Map of the realms <span>M</span>
+          </button>
+          <button className="navAct" onClick={go(() => { setBoardOpen(true); refreshBoardRef.current(); })}>
+            This week&apos;s board <span>diggers + trinkets</span>
+          </button>
+          <button className="navAct" onClick={go(wander)}>
+            Wander somewhere <span>R</span>
+          </button>
+        </>
+      );
+    if (k === "contribute")
+      return (
+        <>
+          <button className="navAct" onClick={go(() => openAddRef.current())}>
+            {owner ? "Add records (owner)" : "Submit a record"}
+            <span>{owner ? "straight into a crate" : "reviewed weekly into This Week or the Selection"}</span>
+          </button>
+          {memberNo && (
+            <button className="navAct" onClick={go(() => setListOpen(true))}>
+              Join the Sombra list <span>live sets, drops, Austin nights</span>
+            </button>
+          )}
+          {memberNo && (
+            <button className="navAct" onClick={go(() => setFitOpen(true))}>
+              Invite a friend <span>your keys, as {memberTag(memberNo)}</span>
+            </button>
+          )}
+        </>
+      );
+    if (k === "world")
+      return (
+        <>
+          <button className="navAct" onClick={go(() => setFitOpen(true))}>
+            Your fit <span>how you look to everyone</span>
+          </button>
+          <button className="navAct" onClick={go(() => engineRef.current?.toggleView())}>
+            Change the camera <span>close · overview · V</span>
+          </button>
+          <button className="navAct" onClick={go(onMute)}>
+            {np.playing ? "Mute me" : "Unmute me"} <span>just you · Space</span>
+          </button>
+          <a className="navAct" id="sombraDoor" href="https://sombraproject.com">
+            Sombra <span>sombraproject.com</span>
+          </a>
+        </>
+      );
+    return <HelpContent />;
+  };
+
   // the door's copy — real numbers only. While lurking, roster = the people
   // inside; after the knock it would count you too, so freeze it there.
   const inside = started ? othersRef.current : roster;
@@ -1214,119 +1339,67 @@ export default function Bar({
       <canvas ref={canvasRef} id="c" />
 
       <div id="topbar" className={menuOpen ? "open" : ""}>
-        {/* touch: the pills live behind this ☰ (CSS keeps them mounted — the
-            venue clock must keep ticking the world light even while hidden) */}
+        {/* phone: every destination lives in one sheet behind ☰ */}
         <button
           id="menuBtn"
-          onClick={() => setMenuOpen((o) => !o)}
+          onClick={() => {
+            setMenuOpen((o) => !o);
+            setNav(null);
+          }}
           aria-label="menu"
+          aria-expanded={menuOpen}
         >
           {menuOpen ? "✕" : "☰"}
           {!menuOpen && unseenAdds > 0 && <span className="badge">{unseenAdds}</span>}
           {!menuOpen && unseenGifts > 0 && <span className="giftDotMenu">🎁</span>}
         </button>
+        {/* stays mounted everywhere: it pushes the time-of-day light into the world */}
         {started && <VenueClock engineRef={engineRef} />}
-        {started && roster > 0 && (
-          <div id="roster" title="listeners in the bar right now">
-            ☕ {roster} {roster === 1 ? "listener" : "listeners"}
+        {started && (
+          <nav id="radioNav" aria-label="Sombra Radio">
+            <button
+              id="nowBtn"
+              className={"navItem live" + (nav === "now" ? " on" : "")}
+              onClick={() => setNav((n) => (n === "now" ? null : "now"))}
+              aria-expanded={nav === "now"}
+            >
+              <span className="liveDot" aria-hidden="true" /> LIVE · <b>Sombra Radio</b>
+              <span className="navSub">{Math.max(roster, 1)} listening</span>
+              {unseenAdds > 0 && <span className="badge">{unseenAdds}</span>}
+            </button>
+            {(["discover", "contribute", "world"] as const).map((k) => (
+              <button
+                key={k}
+                id={`${k}Btn`}
+                className={"navItem" + (nav === k ? " on" : "")}
+                onClick={() => setNav((n) => (n === k ? null : k))}
+                aria-expanded={nav === k}
+              >
+                {NAV_LABEL[k]}
+                {k === "discover" && unseenGifts > 0 && <span className="giftDot">🎁{unseenGifts}</span>}
+              </button>
+            ))}
+            <button
+              id="helpBtn"
+              className={"navItem help" + (nav === "help" ? " on" : "")}
+              onClick={() => setNav((n) => (n === "help" ? null : "help"))}
+              aria-label="help and controls"
+              aria-expanded={nav === "help"}
+            >
+              ?
+            </button>
+          </nav>
+        )}
+        {started && (nav || menuOpen) && (
+          <div id="navPanel" className={menuOpen ? "sheet" : "pop"} aria-label="menu">
+            {(menuOpen ? NAV_ORDER : [nav!]).map((k) => (
+              <section key={k} className="navSec">
+                {menuOpen && <h3>{NAV_LABEL[k]}</h3>}
+                {navContent(k)}
+              </section>
+            ))}
           </div>
         )}
-        {started && (
-          <button
-            id="addedBtn"
-            onClick={() => {
-              openAdded();
-              setMenuOpen(false);
-            }}
-            title="recently added records"
-          >
-            ＋ added
-            {unseenAdds > 0 && <span className="badge">{unseenAdds}</span>}
-          </button>
-        )}
-        <button
-          id="addBtn"
-          onClick={() => {
-            openAddRef.current();
-            setMenuOpen(false);
-          }}
-        >
-          {owner ? "＋ 新着 add records" : "＋ add a record"}
-        </button>
-        {started && (
-          <button
-            id="dexBtn"
-            onClick={() => {
-              setMapOpen(false);
-              setDexOpen(true);
-              setMenuOpen(false);
-            }}
-            title="your Crate Dex — every record you've dug (C)"
-          >
-            💿 {Object.keys(progress.dug).length}
-            <span className="dexPillTitle">{titleFor(Object.keys(progress.dug).length)}</span>
-            {unseenGifts > 0 && (
-              <span className="giftDot" title="new gifts in your stash">
-                🎁{unseenGifts}
-              </span>
-            )}
-          </button>
-        )}
-        {started && (
-          <button
-            id="mapBtn"
-            onClick={() => {
-              setDexOpen(false);
-              setMapOpen(true);
-              setMenuOpen(false);
-            }}
-            title="the map of the realms — fast travel (M)"
-          >
-            🗺 map
-            <span className="mapPillCount">
-              {REALM_ORDER.filter((r) => progress.visited[r]).length}/{REALM_ORDER.length}
-            </span>
-          </button>
-        )}
-        {started && memberNo && (
-          <button
-            id="listBtn"
-            onClick={() => {
-              setListOpen(true);
-              setMenuOpen(false);
-            }}
-            title="the Sombra list: live sets, fresh drops, Austin nights"
-          >
-            ☉☽ the list
-          </button>
-        )}
-        {started && (
-          <button
-            id="fitBtn"
-            onClick={() => {
-              setFitOpen(true);
-              setMenuOpen(false);
-            }}
-            title="customize your look"
-          >
-            ◇ your fit
-          </button>
-        )}
-        {/* the worlds connect both ways — a quiet door back to Sombra */}
-        <a
-          id="sombraDoor"
-          href="https://sombraproject.com"
-          title="back to Sombra"
-        >
-          ☉☽
-        </a>
-        <div id="hint">
-          WASD · move &nbsp; ⇧ · sprint &nbsp; CLICK · anything
-          <br />
-          E · talk · browse &nbsp; M · map &nbsp; C · dex &nbsp; R · wander
-          <br />
-          SPACE · mute me &nbsp; N · skip room &nbsp; V · view
-        </div>
       </div>
 
       {/* on touch the pill is tappable — it IS the E button you're standing on */}
@@ -1379,7 +1452,11 @@ export default function Bar({
           onPick={(i) => setCrate((c) => (c ? { ...c, idx: i } : c))}
           onPlay={() => cueFromCrate(crate.idx)}
           onKeep={(t) => {
-            if (keep(t, crate.shelf).isNew) giftRef.current({ kind: "keep" });
+            const res = keep(t, crate.shelf);
+            if (res.isNew) {
+              toast(`✦ Saved to your crate · ${Object.keys(getProgress().dug).length} records`, "green", 3200);
+              giftRef.current({ kind: "keep" });
+            }
           }}
         />
       )}
@@ -1510,6 +1587,43 @@ export default function Bar({
 
       {boardOpen && <BoardOverlay board={board} onClose={() => setBoardOpen(false)} />}
 
+      {radioOpen && (
+        <RadioCounter
+          onClose={() => setRadioOpen(false)}
+          onSubmit={() => {
+            setRadioOpen(false);
+            openAddRef.current();
+          }}
+          onBoard={() => {
+            setRadioOpen(false);
+            setBoardOpen(true);
+            refreshBoardRef.current();
+          }}
+        />
+      )}
+
+      {welcome && doorPhase === "gone" && (
+        <div id="welcome" role="status">
+          <p>
+            <b>You&apos;re in Sombra Radio.</b> Everyone here hears the same record. Listen, dig, or bring something
+            to the counter.
+            {memberNo && <span className="wNum">You&apos;re member {memberTag(memberNo)}.</span>}
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setWelcome(false);
+              welcomeDueRef.current = false;
+              try {
+                localStorage.setItem(WELCOME_KEY, "1");
+              } catch {}
+            }}
+          >
+            Start listening
+          </button>
+        </div>
+      )}
+
       {submitOpen && (
         <SubmitCard
           memberNo={memberNo}
@@ -1578,6 +1692,113 @@ export default function Bar({
   );
 }
 
+/* ------------------------------------------------------------ the top bar */
+type NavKey = "now" | "discover" | "contribute" | "world" | "help";
+const NAV_ORDER: NavKey[] = ["now", "discover", "contribute", "world", "help"];
+const NAV_LABEL: Record<NavKey, string> = {
+  now: "Now Playing",
+  discover: "Discover",
+  contribute: "Contribute",
+  world: "World",
+  help: "Help",
+};
+const WELCOME_KEY = "hallu-welcome-v1";
+
+/** The ? panel: the three music actions, then the keys (desktop). */
+function HelpContent() {
+  return (
+    <div className="helpBody">
+      <p className="navLead">Sombra Radio: one record, the whole venue, together.</p>
+      <dl className="helpActs">
+        <dt>Dig for records</dt>
+        <dd>Walk up to a crate. Each record plays 30s, just for you.</dd>
+        <dt>Save to my crate</dt>
+        <dd>✦ in a crate. It&apos;s yours, and it counts on the weekly board.</dd>
+        <dt>Play next for the room</dt>
+        <dd>⤵ in a crate. Everyone hears it next.</dd>
+        <dt>Submit a record</dt>
+        <dd>The drop box or the Omakase counter. Reviewed every week.</dd>
+      </dl>
+      <div className="helpKeys deskOnly">
+        <span><kbd>WASD</kbd> move</span>
+        <span><kbd>⇧</kbd> sprint</span>
+        <span><kbd>click</kbd> go there</span>
+        <span><kbd>E</kbd> use</span>
+        <span><kbd>M</kbd> map</span>
+        <span><kbd>C</kbd> my crate</span>
+        <span><kbd>R</kbd> wander</span>
+        <span><kbd>V</kbd> camera</span>
+        <span><kbd>Space</kbd> mute me</span>
+        <span><kbd>N</kbd> skip (room vote)</span>
+      </div>
+      <div className="helpKeys touchOnly">
+        <span>Drag the stick to walk</span>
+        <span>Tap anything to go there</span>
+        <span><kbd>E</kbd> uses what you&apos;re next to</span>
+      </div>
+    </div>
+  );
+}
+
+/** Sombra Radio's in-world home, the omakase counter: who picks the music and
+ *  how a visitor adds to it. */
+function RadioCounter({
+  onClose,
+  onSubmit,
+  onBoard,
+}: {
+  onClose: () => void;
+  onSubmit: () => void;
+  onBoard: () => void;
+}) {
+  return (
+    <div
+      className="overlay open"
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div id="radioTalk" role="dialog" aria-label="Sombra Radio">
+        <div className="mtWho">SOMBRA RADIO · THE COUNTER</div>
+        <div className="mtLines">
+          <p>One record plays for the whole venue, live. Every room hears the same thing.</p>
+        </div>
+        <div className="rcCols">
+          <section>
+            <h4>Who picks the music</h4>
+            <ul>
+              <li><b>Gongo</b>: his own sets, the GONGO crate</li>
+              <li><b>The Sombra Selection</b>: artists Sombra follows</li>
+              <li><b>This Week</b>: fresh house, picked every Friday</li>
+              <li><b>Between picks</b>, the radio pulls from every crate to suit the hour</li>
+              <li><b>ON AIR</b>: when the sign is lit, a Sombra DJ is live</li>
+            </ul>
+          </section>
+          <section>
+            <h4>How you add to it</h4>
+            <ul>
+              <li><b>Play next</b>: pick from any crate and the room hears it next</li>
+              <li><b>Submit a record</b>: reviewed every week into This Week or the Selection</li>
+              <li><b>Save to your crate</b> as you dig: it counts on the weekly board</li>
+            </ul>
+          </section>
+        </div>
+        <div className="mtBtns">
+          <button type="button" className="primary" onClick={onSubmit}>
+            submit a record
+          </button>
+          <button type="button" onClick={onBoard}>
+            this week&apos;s board
+          </button>
+          <button type="button" onClick={onClose}>
+            back to the room
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ------------------------------------------------------------ the weekly board */
 const byDigs = (b: WeekBoard) => [...b.top].filter((r) => r.digs > 0).sort((x, y) => y.digs - x.digs);
 const byTrinkets = (b: WeekBoard) => [...b.top].filter((r) => r.trinkets > 0).sort((x, y) => y.trinkets - x.trinkets);
@@ -1621,7 +1842,7 @@ function masterLines(b: WeekBoard | null): string[] {
     );
   }
   out.push(`Board gets wiped ${resetWhen(b.endsAt).replace(" · ", ", ")}.`);
-  out.push("Got a record the room should hear? Tell me. I go through them every week.");
+  out.push("Got a record the room should hear? Tell me. I go through them every week. Who picks what: ask at the Omakase counter.");
   return out;
 }
 
@@ -1658,7 +1879,7 @@ function MasterTalk({
             read the board
           </button>
           <button type="button" onClick={onAdd}>
-            add a record
+            submit a record
           </button>
           <button type="button" onClick={onPick}>
             pour me a pick
@@ -1774,7 +1995,7 @@ function SubmitCard({
           close ✕
         </button>
         <div className="lcKicker">投函 · THE DROP BOX</div>
-        <div className="lcTitle">Add a record to the room</div>
+        <div className="lcTitle">Submit a record</div>
         {state === "done" ? (
           <div className="lcBody">
             {"It's in the box. Every week Sombra goes through them, and the best land in This Week or the Sombra Selection. Keep an eye on the crates."}
@@ -2071,9 +2292,15 @@ function NowPlaying({
       <div id="npHead" onClick={() => setOpen((o) => !o)}>
         <div className={"disc" + (np.playing ? " spin" : "")} />
         <div id="npMeta">
-          <div id="npLabel">♫ THE ROOM · NOW PLAYING</div>
-          <div id="npTitle">{t?.title ?? "—"}</div>
+          <div id="npLabel">
+            <span className="liveDot" aria-hidden="true" /> LIVE · SOMBRA RADIO
+          </div>
+          <div id="npTitle">
+            <span className="npLiveTag">LIVE</span>
+            {t?.title ?? "—"}
+          </div>
           <div id="npArtist">{t?.artist ?? "—"}</div>
+          <div id="npTogether">Everyone in the room is hearing this together</div>
           <div id="npSrc">{src}</div>
         </div>
         {/* touch-only quick controls — the whole mini-bar in one row */}
@@ -2256,12 +2483,12 @@ function Crate({
   const big = (rec.artist || rec.title).split(/[\s&]/)[0].toUpperCase();
   const waitSec = Math.ceil(flow.cueWaitLeft / 1000);
   const cueLabel = solo
-    ? "⤵ CUE NEXT"
+    ? "⤵ PLAY NEXT FOR THE ROOM"
     : waitSec > 0
     ? `⤵ wait ${waitSec}s to cue`
     : atCap
     ? "wait for one to play"
-    : `⤵ CUE NEXT (${flow.myCue}/${flow.cueCap})`;
+    : `⤵ PLAY NEXT (${flow.myCue}/${flow.cueCap})`;
   const n = shelf.records.length;
   const sideB = Math.ceil(n / 2); // first index on Side B
   const pos = (i: number) => (i < sideB ? `A${i + 1}` : `B${i - sideB + 1}`);
@@ -2313,9 +2540,9 @@ function Crate({
               id="keepBtn"
               className={kept ? "kept" : ""}
               onClick={keepIt}
-              title="keep it in your Crate Dex (no cue needed)"
+              title="save it to your crate (just you, no cue)"
             >
-              {kept ? "✓ in your dex" : "✦ keep"}
+              {kept ? "✓ in my crate" : "✦ Save to my crate"}
             </button>
           </aside>
           <ol className="rbList" ref={listRef} role="listbox" aria-label={`${shelf.label} tracklist`}>
@@ -2343,7 +2570,7 @@ function Crate({
           </ol>
         </div>
         <footer className="rbFoot">
-          <span className="deskOnly">↑ ↓ browse · ↵ cue · K keep · </span>▶ plays in the room · ✦ in your dex
+          <span className="deskOnly">↑ ↓ dig · ↵ play next · K save · </span>▶ plays in the room · ✦ in your crate
         </footer>
       </div>
     </div>

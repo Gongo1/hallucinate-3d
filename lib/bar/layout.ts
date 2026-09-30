@@ -107,6 +107,9 @@ export const GARDEN = {
 // ----- OMAKASE (the selector's counter) -----
 export const OMAKASE = {
   counter: { x: 250, y: 300, w: 640, h: 64 }, // long blonde-wood counter
+  // Sombra Radio's in-world home: the counter's left end explains who picks
+  // the music and how to contribute (Ken + the crates own the rest of it)
+  radio: { x: 300, y: 400 },
   stools: [
     { x: 360, y: 478 }, { x: 470, y: 478 }, { x: 580, y: 478 }, { x: 690, y: 478 }, { x: 800, y: 478 },
   ],
@@ -293,7 +296,7 @@ export interface DoorTheme {
 export const DOOR_THEME: Record<string, DoorTheme> = {
   kissa: { name: "LISTENING ROOM", kanji: "聴", vibe: "sombra's room · the hub", accent: "#ffce8c", glow: "#ffb35e", frame: "#3a2817", style: "kissa" },
   garden: { name: "THE GARDEN", kanji: "庭", vibe: "open air · dusk & koi", accent: "#cfe8a8", glow: "#7e9b5e", frame: "#4a3a22", style: "garden" },
-  omakase: { name: "OMAKASE", kanji: "御任せ", vibe: "selector's counter", accent: "#a9cde8", glow: "#5a86a8", frame: "#caa06a", style: "omakase" },
+  omakase: { name: "OMAKASE", kanji: "御任せ", vibe: "sombra radio · the counter", accent: "#a9cde8", glow: "#5a86a8", frame: "#caa06a", style: "omakase" },
   berlin: { name: "BERLIN", kanji: "地下", vibe: "concrete · fog · 4am", accent: "#ff7a72", glow: "#e0433a", frame: "#26262b", style: "berlin" },
   tearoom: { name: "TEA ROOM", kanji: "茶室", vibe: "tatami · tea · calm", accent: "#d4ecc4", glow: "#9bbf8a", frame: "#5a4a32", style: "tearoom" },
   housemiam: { name: "HOUSEUM", kanji: "宇宙", vibe: "cosmic french house", accent: "#ff8ad6", glow: "#8a6cff", frame: "#2a1d5e", style: "cosmic" },

@@ -75,7 +75,9 @@ export const buildOmakase: RoomBuilder = ({ room }) => {
   for (const s of stools) g.add(glowPool(s.x, s.y - 26, 70, "#ffce8c", 0.26));
 
   /* ---------------- the blonde counter (the one solid back-fixture) */
-  g.add(block(c, TOP - 5, "#b98e56"));
+  const counterBody = block(c, TOP - 5, "#b98e56");
+  counterBody.userData.pick = { kind: "radio" }; // Sombra Radio's home — click to learn how it works
+  g.add(counterBody);
   // a slightly overhanging top slab + the lifted front edge that catches the light
   g.add(block({ x: c.x - 6, y: c.y - 4, w: c.w + 12, h: c.h + 10 }, 5, "#d8b27a", TOP - 5));
   const lip = block({ x: c.x - 6, y: c.y + c.h + 3, w: c.w + 12, h: 3 }, 7, "#e8c48c", TOP - 7);

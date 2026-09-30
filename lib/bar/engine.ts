@@ -48,6 +48,8 @@ type Zone =
   | { type: "board"; cx: number; cy: number; r: number }
   // the drop box: suggest a record for review (kissa)
   | { type: "dropbox"; cx: number; cy: number; r: number }
+  // Sombra Radio's home: the omakase counter explains who picks + how to add
+  | { type: "radio"; cx: number; cy: number; r: number }
   | { type: "portal"; cx: number; cy: number; r: number }
   | { type: "goldrecord"; cx: number; cy: number; r: number; url: string; label?: string }
   | { type: "door"; cx: number; cy: number; r: number; door: RoomDoor }
@@ -86,6 +88,8 @@ export interface EngineCallbacks {
   onMastersPick: () => void;
   /** walked up to the weekly board (kissa) — zoom in on it */
   onOpenBoard?: () => void;
+  /** the omakase counter: how Sombra Radio works */
+  onOpenRadio?: () => void;
   onShowDeck: () => void;
   onTogglePlay: () => void;
   onNext: () => void;
@@ -599,6 +603,7 @@ export class BarEngine {
     // the blonde counter is the one solid back-fixture; stools + the glass neta
     // case are passable so the crates in front of the counter stay reachable.
     this.solid(OMAKASE.counter.x, OMAKASE.counter.y, OMAKASE.counter.w, OMAKASE.counter.h);
+    this.zones.push({ type: "radio", cx: OMAKASE.radio.x, cy: OMAKASE.radio.y, r: 60 });
   }
 
   private buildBerlinFixtures() {
@@ -848,6 +853,8 @@ export class BarEngine {
       this.cb.onMastersPick();
     } else if (z.type === "board") {
       this.cb.onOpenBoard?.();
+    } else if (z.type === "radio") {
+      this.cb.onOpenRadio?.();
     } else if (z.type === "dropbox") {
       this.cb.onOpenIngest(); // the host decides: suggest (visitors) or add (owner)
     } else if (z.type === "deck") {
@@ -1414,12 +1421,13 @@ export class BarEngine {
       let s = "";
       if (best.type === "shelf")
         s = best.shelf.data.ingest
-          ? `Pour in new records <b>新着</b>`
-          : `Browse <b>${best.shelf.data.label}</b>`;
-      if (best.type === "deck") s = `Drop in on the <b>house radio</b>`;
+          ? `Submit a record · <b>新着</b>`
+          : `Dig through <b>${best.shelf.data.label}</b>`;
+      if (best.type === "deck") s = `<b>Sombra Radio</b> · live on the deck`;
       if (best.type === "bar") s = `Talk to the <b>master</b> · who's leading this week`;
       if (best.type === "board") s = `Read <b>the board</b> · this week's diggers`;
-      if (best.type === "dropbox") s = `Add a record · <b>the drop box</b>`;
+      if (best.type === "dropbox") s = `Submit a record · <b>the drop box</b>`;
+      if (best.type === "radio") s = `<b>Sombra Radio</b> · who picks the music`;
       if (best.type === "portal") s = `Enter the <b>rave</b>?`;
       if (best.type === "goldrecord")
         s = best.label ?? `Give <b>Houseum</b> their flowers — open their YouTube ↗`;
