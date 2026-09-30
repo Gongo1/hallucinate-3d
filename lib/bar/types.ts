@@ -14,6 +14,8 @@ export interface Track {
   id?: string;
   /** known length in seconds, or null/undefined if unresolved (backstop covers it) */
   durationSeconds?: number | null;
+  /** times it has played in the room (counted since 2026-09-30) */
+  plays?: number;
   /** a full DJ set from a FULL_SET_CRATES crate — exempt from the 15-min backstop */
   fullSet?: boolean;
 }

@@ -26,6 +26,7 @@ interface RecordRow {
   sc_url: string | null;
   sort: number;
   duration_seconds: number | null;
+  play_count?: number | null;
 }
 interface ShelfRow {
   id: string;
@@ -47,19 +48,24 @@ function toTrack(r: RecordRow): Track {
     ytId: r.yt_id ?? undefined,
     scUrl: r.sc_url ?? undefined,
     durationSeconds: r.duration_seconds,
+    plays: r.play_count ?? 0,
   };
 }
 
 /** Read the whole library from Supabase. The ingest shelf always sorts last. */
 export async function loadShelves(): Promise<Shelf[]> {
   const sb = getServerClient();
-  const { data, error } = await sb
-    .from("shelves")
-    .select(
-      "id, slug, label, color, is_ingest, sort, room, energy, records ( id, title, artist, yt_id, sc_url, sort, duration_seconds )"
-    )
-    .order("is_ingest", { ascending: true })
-    .order("sort", { ascending: true });
+  const query = (recordCols: string) =>
+    sb
+      .from("shelves")
+      .select(`id, slug, label, color, is_ingest, sort, room, energy, records ( ${recordCols} )`)
+      .order("is_ingest", { ascending: true })
+      .order("sort", { ascending: true });
+  const base = "id, title, artist, yt_id, sc_url, sort, duration_seconds";
+  let { data, error } = await query(`${base}, play_count`);
+  // play counts arrive with a migration (20260930c): until it has run, load
+  // the library without them rather than taking the bar down
+  if (error && /play_count/.test(error.message)) ({ data, error } = await query(base));
   if (error) throw new Error(`loadShelves: ${error.message}`);
 
   // A set lives only in its own full-set crate (the Gongo crate, the Selection):

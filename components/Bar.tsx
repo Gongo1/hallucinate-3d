@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, type RefObject } from "react";
 import type { RealtimeChannel } from "@supabase/supabase-js";
 import { BarEngine } from "@/lib/bar/engine";
 import { DANCE_NAMES } from "@/lib/bar/three/character";
@@ -70,6 +70,7 @@ import {
   type WeekBoard,
 } from "@/app/actions/members";
 import { memberTag } from "@/lib/members/tag";
+import { notePlay } from "@/app/actions/plays";
 
 // The door ritual's timing (ms from the knock). Spec:
 // KB/Sombra/outputs/html/2026-09-29-hallucinate-door-ritual.html
@@ -247,6 +248,7 @@ export default function Bar({
   const [boardOpen, setBoardOpen] = useState(false);
   const [masterOpen, setMasterOpen] = useState(false);
   const refreshBoardRef = useRef<() => void>(() => {});
+  const countedPlayRef = useRef(0); // the startedAt of the last track this host counted
   const [prompt, setPrompt] = useState<string | null>(null);
   const [np, setNp] = useState<PlayerState>(EMPTY_NP);
   const [crate, setCrate] = useState<CrateState | null>(null);
@@ -576,6 +578,11 @@ export default function Bar({
       // and mirror the cue + flow-rule numbers into the UI
       onRoom: (s: RoomState) => {
         latestRoomRef.current = s;
+        // the host counts each new track once (the crates show play counts)
+        if (s.now?.id && s.startedAt !== countedPlayRef.current && presenceRef.current?.amHost()) {
+          countedPlayRef.current = s.startedAt;
+          void notePlay(s.now.id).catch(() => {});
+        }
         setCue(s.cue);
         setOnAir({ live: s.live, dj: s.dj, locked: s.cueLocked });
         engineRef.current?.setOnAir(s.live, s.dj); // light the in-world sign
@@ -711,8 +718,14 @@ export default function Bar({
   // close it and you're back in the room at its live spot.
   const previewing = crate ? crate.shelf.records[crate.idx] ?? null : null;
   useEffect(() => {
-    if (previewing) playerRef.current?.startPreview(previewing, previewStart(previewing));
-    else playerRef.current?.endPreview();
+    if (!previewing) {
+      playerRef.current?.endPreview();
+      return;
+    }
+    // a beat before loading, so arrowing down a tracklist doesn't fire a load
+    // per row; the record you land on plays
+    const t = setTimeout(() => playerRef.current?.startPreview(previewing, previewStart(previewing)), 260);
+    return () => clearTimeout(t);
   }, [previewing]);
 
   // ----- the weekly board: fetched once you're inside, then every minute; the
@@ -1349,6 +1362,7 @@ export default function Bar({
           dug={progress.dug}
           onClose={() => setCrate(null)}
           onFlip={flip}
+          onPick={(i) => setCrate((c) => (c ? { ...c, idx: i } : c))}
           onPlay={() => cueFromCrate(crate.idx)}
           onKeep={(t) => {
             if (keep(t, crate.shelf).isNew) giftRef.current({ kind: "keep" });
@@ -2042,6 +2056,7 @@ function Crate({
   dug,
   onClose,
   onFlip,
+  onPick,
   onPlay,
   onKeep,
 }: {
@@ -2051,22 +2066,54 @@ function Crate({
   dug: ReturnType<typeof getProgress>["dug"];
   onClose: () => void;
   onFlip: (d: number) => void;
+  onPick: (idx: number) => void;
   onPlay: () => void;
   onKeep: (t: Track) => void;
 }) {
+  // The back of the record: the whole tracklist at once (Side A / Side B),
+  // play counts, ↑/↓ to move, ↵ to cue, K to keep. The selected record
+  // previews just for you (the room plays on).
   const { shelf, idx } = crate;
   const rec = shelf.records[idx];
   const kept = dug[recordKey(rec)];
   const [caught, setCaught] = useState<string | null>(null);
+  const listRef = useRef<HTMLOListElement | null>(null);
   // flipping to a record counts as seeing it (the Dex's "seen")
   useEffect(() => {
     markSeen(rec);
   }, [rec]);
+  // keep the selected row in view as you arrow through
+  useEffect(() => {
+    listRef.current?.querySelector<HTMLElement>(`[data-i="${idx}"]`)?.scrollIntoView({ block: "nearest" });
+  }, [idx]);
+  const atCap = !flow.canCue;
+  const keepIt = () => {
+    if (kept) return;
+    onKeep(rec);
+    setCaught(recordKey(rec));
+  };
+  // keyboard: the list owns the arrows while the crate is open
+  const keysRef = useRef({ onFlip, onPlay, keepIt, atCap });
+  keysRef.current = { onFlip, onPlay, keepIt, atCap };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const k = keysRef.current;
+      if (e.key === "ArrowDown" || e.key === "ArrowRight") k.onFlip(1);
+      else if (e.key === "ArrowUp" || e.key === "ArrowLeft") k.onFlip(-1);
+      else if (e.key === "Enter") {
+        if (!k.atCap) k.onPlay();
+      } else if (e.key.toLowerCase() === "k") k.keepIt();
+      else return;
+      e.preventDefault();
+      e.stopPropagation();
+    };
+    addEventListener("keydown", onKey, true);
+    return () => removeEventListener("keydown", onKey, true);
+  }, []);
+
   const col = shelf.color;
   const big = (rec.artist || rec.title).split(/[\s&]/)[0].toUpperCase();
-  const atCap = !flow.canCue;
   const waitSec = Math.ceil(flow.cueWaitLeft / 1000);
-  // cue button label: solo hides limits; in a crowd show rate-limit wait, then cap
   const cueLabel = solo
     ? "⤵ CUE NEXT"
     : waitSec > 0
@@ -2074,6 +2121,9 @@ function Crate({
     : atCap
     ? "wait for one to play"
     : `⤵ CUE NEXT (${flow.myCue}/${flow.cueCap})`;
+  const n = shelf.records.length;
+  const sideB = Math.ceil(n / 2); // first index on Side B
+  const pos = (i: number) => (i < sideB ? `A${i + 1}` : `B${i - sideB + 1}`);
   return (
     <div
       className="overlay open"
@@ -2084,63 +2134,88 @@ function Crate({
       <div className="ovClose" onClick={onClose}>
         CLOSE ✕
       </div>
-      <div id="crateBox">
-        <div id="crateGenre" style={{ color: col }}>
-          {shelf.label}
-        </div>
-        <div id="sleeveWrap">
-          <div
-            id="sleeve"
-            key={recordKey(rec)}
-            className={caught === recordKey(rec) ? "caught" : ""}
-            style={{
-              background: `linear-gradient(135deg, ${col}, ${shade(col, -58)})`,
-            }}
-          >
-            <div className="vinyl" />
-            <div className="num">A{idx + 1}</div>
-            <div className="big" style={{ color: shade(col, 95) }}>
-              {big}
-            </div>
-            {kept && (
-              <div className="sleeveDex">
-                <TierChip tier={kept.tier} small />
-                <span>IN DEX</span>
-              </div>
-            )}
+      <div id="recordBack" style={{ ["--crate" as string]: col }}>
+        <header className="rbHead">
+          <div className="rbLabel">{shelf.label}</div>
+          <div className="rbCat">
+            SOMBRA · {n} {n === 1 ? "record" : "records"} · reshuffled every friday
           </div>
+        </header>
+        <div className="rbBody">
+          <aside className="rbNow">
+            <div
+              className={"rbSleeve" + (caught === recordKey(rec) ? " caught" : "")}
+              key={recordKey(rec)}
+              style={{ background: `linear-gradient(135deg, ${col}, ${shade(col, -58)})` }}
+            >
+              <div className="vinyl" />
+              <div className="big" style={{ color: shade(col, 95) }}>
+                {big}
+              </div>
+              {kept && (
+                <div className="sleeveDex">
+                  <TierChip tier={kept.tier} small />
+                  <span>IN DEX</span>
+                </div>
+              )}
+            </div>
+            <div className="rbArtist">{rec.artist || "—"}</div>
+            <div className="rbTitle">{rec.title}</div>
+            <div className="rbStats">
+              {pos(idx)} · played {rec.plays ?? 0} {(rec.plays ?? 0) === 1 ? "time" : "times"}
+              {rec.durationSeconds ? ` · ${fmtLen(rec.durationSeconds)}` : ""}
+            </div>
+            <button id="playBtn" onClick={onPlay} disabled={atCap}>
+              {cueLabel}
+            </button>
+            <button
+              id="keepBtn"
+              className={kept ? "kept" : ""}
+              onClick={keepIt}
+              title="keep it in your Crate Dex (no cue needed)"
+            >
+              {kept ? "✓ in your dex" : "✦ keep"}
+            </button>
+          </aside>
+          <ol className="rbList" ref={listRef} role="listbox" aria-label={`${shelf.label} tracklist`}>
+            {shelf.records.map((t, i) => (
+              <Fragment key={recordKey(t) + i}>
+                {(i === 0 || i === sideB) && <li className="rbSide">SIDE {i === 0 ? "A" : "B"}</li>}
+                <li
+                  data-i={i}
+                  role="option"
+                  aria-selected={i === idx}
+                  className={"rbRow" + (i === idx ? " on" : "")}
+                  onClick={() => onPick(i)}
+                >
+                  <span className="rbPos">{pos(i)}</span>
+                  <span className="rbTrack">
+                    <b>{t.artist || "—"}</b> {t.title}
+                  </span>
+                  <span className="rbPlays" title="times played in the room">
+                    {dug[recordKey(t)] ? "✦ " : ""}▶ {t.plays ?? 0}
+                  </span>
+                  <span className="rbLen">{t.durationSeconds ? fmtLen(t.durationSeconds) : ""}</span>
+                </li>
+              </Fragment>
+            ))}
+          </ol>
         </div>
-        <div id="sleeveArtist">{rec.artist || "—"}</div>
-        <div id="sleeveTitle">{rec.title}</div>
-        <div id="crateNav">
-          <button className="navbtn" onClick={() => onFlip(-1)}>
-            ‹
-          </button>
-          <button id="playBtn" onClick={onPlay} disabled={atCap}>
-            {cueLabel}
-          </button>
-          <button className="navbtn" onClick={() => onFlip(1)}>
-            ›
-          </button>
-        </div>
-        <button
-          id="keepBtn"
-          className={kept ? "kept" : ""}
-          onClick={() => {
-            if (kept) return;
-            onKeep(rec);
-            setCaught(recordKey(rec));
-          }}
-          title="keep it in your Crate Dex (no cue needed)"
-        >
-          {kept ? "✓ in your dex" : "✦ keep"}
-        </button>
-        <div id="crateMeta">
-          {idx + 1} / {shelf.records.length}
-        </div>
+        <footer className="rbFoot">
+          <span className="deskOnly">↑ ↓ browse · ↵ cue · K keep · </span>▶ plays in the room · ✦ in your dex
+        </footer>
       </div>
     </div>
   );
+}
+
+/** 6:12, or 1:02:40 for a full set */
+function fmtLen(sec: number): string {
+  const s = Math.round(sec);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const r = String(s % 60).padStart(2, "0");
+  return h ? `${h}:${String(m).padStart(2, "0")}:${r}` : `${m}:${r}`;
 }
 
 /* ------------------------------------------------------------ ingest */

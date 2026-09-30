@@ -679,6 +679,11 @@ export class BarPresence {
     return [...ids].sort()[0] === this.id;
   }
 
+  /** Is this client the room's host right now (it reports plays). */
+  amHost(): boolean {
+    return this.isHost();
+  }
+
   /** Whether this client should (re)load the player — true on track change. */
   shouldReload(): boolean {
     if (!this.room || !this.room.now) return false;

@@ -1,0 +1,453 @@
+<title>Hallucinate Crate Map</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Shippori+Mincho:wght@600;800&family=DM+Mono:wght@400;500&family=Zen+Kaku+Gothic+New:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+/* One deliberate look: the kissa at night (the bar's own tokens). */
+:root {
+  color-scheme: dark;
+  --ground: #120d08;
+  --panel: #1b130b;
+  --panel-2: #241a10;
+  --line: rgba(241, 230, 210, 0.12);
+  --line-2: rgba(241, 230, 210, 0.24);
+  --cream: #f1e6d2;
+  --muted: #b3a38a;
+  --faint: #857661;
+  --lantern: #ffb35e;
+  --vermilion: #e0573f;
+  --moss: #8fae6c;
+  --ink: #1a120a;
+  --mono: "DM Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --display: "Shippori Mincho", "Hiragino Mincho ProN", Georgia, serif;
+  --body: "Zen Kaku Gothic New", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+html, body { background: var(--ground); }
+body { color: var(--cream); font-family: var(--body); font-size: 14px; line-height: 1.45; padding-inline: 16px; padding-block: 0 80px; }
+button, input, select, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--lantern); outline-offset: 2px; }
+
+/* toolbar */
+.bar {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 10;
+  margin-inline: -16px; padding: 12px 16px; background: rgba(18, 13, 8, 0.94);
+  border-bottom: 1px solid var(--line); backdrop-filter: blur(6px);
+  display: flex; flex-wrap: wrap; gap: 10px 14px; align-items: center;
+}
+.brand { display: grid; gap: 1px; margin-right: auto; }
+.brand h1 { margin: 0; font-family: var(--display); font-weight: 800; font-size: 22px; letter-spacing: .02em; }
+.brand span { font-family: var(--mono); font-size: 11px; color: var(--faint); letter-spacing: .04em; }
+#q { background: var(--panel); border: 1px solid var(--line-2); border-radius: 999px; padding: 7px 14px; min-width: 0; width: 220px; }
+.btn { font-family: var(--mono); font-size: 12px; letter-spacing: .04em; background: var(--panel); border: 1px solid var(--line-2); border-radius: 999px; padding: 7px 13px; cursor: pointer; white-space: nowrap; }
+.btn:hover { border-color: var(--lantern); }
+.btn.primary { background: var(--lantern); color: var(--ink); border-color: var(--lantern); }
+.btn.ghost { background: transparent; }
+.pending { font-family: var(--mono); font-size: 12px; color: var(--lantern); }
+.help { font-family: var(--mono); font-size: 11.5px; color: var(--faint); max-width: 90ch; margin: 12px 0 0; }
+
+/* the board */
+.board { display: grid; grid-template-columns: repeat(auto-fill, minmax(310px, 1fr)); gap: 16px; align-items: start; margin-top: 16px; }
+.room { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 12px; display: grid; gap: 10px; }
+.room.drop { border-color: var(--lantern); box-shadow: 0 0 0 2px rgba(255,179,94,.25); }
+.room.isNew { border-style: dashed; border-color: rgba(255,179,94,.5); }
+.roomHead { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.roomName { font-family: var(--display); font-weight: 800; font-size: 17px; }
+.spots { font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.spots.over { color: var(--vermilion); }
+.roomNote { font-family: var(--mono); font-size: 11px; color: var(--lantern); }
+.addCrate { justify-self: start; font-family: var(--mono); font-size: 11.5px; color: var(--muted); background: none; border: 1px dashed var(--line-2); border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+.addCrate:hover { color: var(--cream); border-color: var(--lantern); }
+
+.crate { background: var(--panel-2); border: 1px solid var(--line); border-left: 4px solid var(--c, var(--lantern)); border-radius: 6px; }
+.crate.drop { outline: 2px solid var(--lantern); }
+.crate.isNew .cName::after { content: "NEW"; margin-left: 6px; font-family: var(--mono); font-size: 9.5px; letter-spacing: .12em; color: var(--lantern); }
+.cHead { display: flex; align-items: center; gap: 6px; padding: 7px 8px; cursor: grab; }
+.cName { flex: 1; min-width: 0; font-family: var(--mono); font-weight: 500; font-size: 12.5px; letter-spacing: .03em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cName input { width: 100%; background: var(--ground); border: 1px solid var(--line-2); border-radius: 4px; padding: 2px 6px; font-family: var(--mono); font-size: 12.5px; }
+.cCount { font-family: var(--mono); font-size: 11px; color: var(--faint); }
+.cTag { font-family: var(--mono); font-size: 9.5px; letter-spacing: .1em; color: var(--muted); border: 1px solid var(--line-2); border-radius: 3px; padding: 0 4px; }
+.icon { background: none; border: 0; color: var(--muted); cursor: pointer; padding: 2px 4px; border-radius: 4px; font-size: 13px; line-height: 1; }
+.icon:hover { color: var(--cream); background: rgba(241,230,210,.08); }
+.cTools { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 0 8px 8px; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.cTools input[type=color] { width: 26px; height: 20px; border: 0; background: none; padding: 0; }
+.cTools select { background: var(--ground); border: 1px solid var(--line-2); border-radius: 4px; font-size: 11px; padding: 2px 4px; max-width: 150px; }
+.songs { list-style: none; margin: 0; padding: 0 4px 6px; display: grid; gap: 1px; }
+.song { position: relative; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; align-items: center; padding: 4px 6px; border-radius: 4px; cursor: grab; font-size: 12.5px; }
+/* move / remove float over the row on hover, so titles get the full width */
+.song .sCtl { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; align-items: center; padding-left: 10px; background: linear-gradient(90deg, transparent, var(--panel-2) 14px); }
+.song:hover .sCtl, .song:focus-within .sCtl { display: flex; }
+@media (hover: none) { .song { grid-template-columns: minmax(0, 1fr) auto auto; } .song .sCtl { position: static; transform: none; display: flex; background: none; padding: 0; } }
+.song .sMove { width: 6.2em; font-family: var(--mono); font-size: 10.5px; background: var(--ground); border: 1px solid var(--line-2); padding: 1px 2px; color: var(--cream); }
+.song:hover { background: rgba(241,230,210,.06); }
+.song.drop { box-shadow: inset 0 2px 0 var(--lantern); }
+.song.moved .sName::before { content: "●"; color: var(--lantern); margin-right: 5px; font-size: 9px; vertical-align: 1px; }
+.song.added .sName::before { content: "+"; color: var(--moss); margin-right: 5px; font-weight: 700; }
+.sName { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sName b { font-weight: 700; }
+.sMeta { font-family: var(--mono); font-size: 10.5px; color: var(--faint); white-space: nowrap; }
+
+.more { font-family: var(--mono); font-size: 11px; color: var(--lantern); background: none; border: 0; cursor: pointer; padding: 2px 10px 8px; }
+.empty { font-family: var(--mono); font-size: 11px; color: var(--faint); padding: 2px 10px 10px; }
+.addLinks { display: grid; gap: 6px; padding: 0 8px 8px; }
+.addLinks textarea { background: var(--ground); border: 1px solid var(--line-2); border-radius: 4px; padding: 6px; font-family: var(--mono); font-size: 11px; min-height: 64px; resize: vertical; }
+
+/* removed tray + new room */
+.tray { margin-top: 18px; background: var(--panel); border: 1px dashed rgba(224,87,63,.45); border-radius: 10px; padding: 12px; }
+.tray.drop { border-color: var(--vermilion); }
+.tray h2 { margin: 0 0 6px; font-family: var(--display); font-size: 16px; }
+.tray .songs { padding: 0; }
+.addRoom { border: 1px dashed var(--line-2); border-radius: 10px; min-height: 90px; display: grid; place-items: center; color: var(--muted); background: none; cursor: pointer; font-family: var(--mono); font-size: 12px; }
+.addRoom:hover { border-color: var(--lantern); color: var(--cream); }
+.inline { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.inline input { background: var(--ground); border: 1px solid var(--line-2); border-radius: 4px; padding: 5px 8px; font-size: 12.5px; min-width: 0; flex: 1; }
+.confirm { font-family: var(--mono); font-size: 11.5px; color: var(--vermilion); }
+
+.toast { position: fixed; left: 50%; bottom: calc(22px + env(safe-area-inset-bottom, 0px)); transform: translate(-50%, 16px); opacity: 0; background: var(--cream); color: var(--ink); font-family: var(--mono); font-size: 12.5px; padding: 9px 16px; border-radius: 999px; transition: all .25s ease; pointer-events: none; z-index: 20; }
+.toast.show { opacity: 1; transform: translate(-50%, 0); }
+#mdOut { width: 100%; min-height: 200px; margin-top: 12px; background: var(--panel); border: 1px solid var(--line-2); border-radius: 8px; padding: 10px; font-family: var(--mono); font-size: 11.5px; color: var(--cream); }
+@media (max-width: 560px) { #q { width: 100%; order: 5; } }
+</style>
+
+<div class="bar">
+  <div class="brand">
+    <h1>Crate Map</h1>
+    <span id="counts"></span>
+  </div>
+  <input id="q" type="search" placeholder="Find a song or artist" aria-label="Find a song or artist">
+  <span class="pending" id="pending"></span>
+  <button class="btn primary" id="copyChanges" type="button">Copy changes as Markdown</button>
+  <button class="btn" id="copyAll" type="button">Copy full layout</button>
+  <button class="btn ghost" id="reset" type="button">Reset to live</button>
+</div>
+<p class="help">Drag a song onto a crate (or onto another song to place it before that one). Drag a crate's header onto another room. ✕ sends a song to the Removed tray, and you can drag it back. Each room shows its crate spots: a room past its spots needs a new spot built. A new room is a placeholder until Claude builds the space. Your edits stay in this browser until you copy them.</p>
+<textarea id="mdOut" hidden readonly aria-label="Markdown export"></textarea>
+
+<main class="board" id="board"></main>
+<section class="tray" id="tray" aria-label="Removed songs"></section>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+const LIVE = __DATA__;
+const KEY = "hallucinate-crate-map-v1";
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const len = (d) => { if (!d) return ""; const h = Math.floor(d / 3600), m = Math.floor((d % 3600) / 60), s = String(d % 60).padStart(2, "0"); return h ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`; };
+const CURATED = new Set(["gongo", "sombra-selection", "this-week"]);
+
+// ---------- state: the live snapshot + your edits (kept in this browser only)
+function fresh() {
+  const songs = {}, order = {};
+  for (const c of LIVE.crates) { order[c.id] = c.songs.map((s) => s.id); for (const s of c.songs) songs[s.id] = { ...s, home: c.id }; }
+  return {
+    rooms: LIVE.rooms.map((r) => ({ ...r })),
+    crates: LIVE.crates.map(({ songs, ...c }) => ({ ...c })),
+    songs, order, removed: [], open: {}, n: 0,
+  };
+}
+let S;
+try { S = JSON.parse(localStorage.getItem(KEY) || "null"); } catch { S = null; }
+if (!S || S.generated !== LIVE.generated) { S = fresh(); S.generated = LIVE.generated; }
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} };
+const crateOf = (sid) => Object.keys(S.order).find((cid) => S.order[cid].includes(sid)) ?? null;
+const origCrate = (sid) => S.songs[sid]?.home ?? null;
+const crateById = (id) => S.crates.find((c) => c.id === id);
+const liveCrate = (id) => LIVE.crates.find((c) => c.id === id);
+const roomById = (id) => S.rooms.find((r) => r.id === id);
+const uid = (p) => `${p}-${Date.now().toString(36)}-${(S.n++).toString(36)}`;
+
+// ---------- edits
+function moveSong(sid, toCrate, beforeSid) {
+  for (const cid in S.order) S.order[cid] = S.order[cid].filter((x) => x !== sid);
+  S.removed = S.removed.filter((x) => x !== sid);
+  if (toCrate === "__removed") S.removed.push(sid);
+  else {
+    const list = S.order[toCrate];
+    const at = beforeSid ? list.indexOf(beforeSid) : -1;
+    at >= 0 ? list.splice(at, 0, sid) : list.push(sid);
+  }
+  commit();
+}
+function moveCrate(cid, toRoom) { crateById(cid).room = toRoom; commit(); }
+function addCrate(roomId, label) {
+  const id = uid("crate");
+  S.crates.push({ id, slug: null, label: label.toUpperCase(), color: "#7e9b5e", room: roomId, ingest: false, isNew: true });
+  S.order[id] = []; S.open[id] = true; commit();
+}
+function deleteCrate(cid) {
+  S.removed.push(...S.order[cid]);
+  const c = crateById(cid);
+  if (c.isNew) { S.crates = S.crates.filter((x) => x.id !== cid); delete S.order[cid]; }
+  else { c.deleted = true; S.order[cid] = []; }
+  commit();
+}
+function addRoom(name) { S.rooms.push({ id: uid("room"), name: name.toUpperCase(), spots: 0, isNew: true }); commit(); }
+function addLinks(cid, text) {
+  let n = 0;
+  for (const raw of text.split("\n")) {
+    const line = raw.trim(); if (!line) continue;
+    const url = (line.match(/https?:\/\/\S+/) || [])[0]; if (!url) continue;
+    const label = line.replace(url, "").replace(/\|\s*$/, "").trim();
+    const [a, t] = label.includes("—") ? label.split("—").map((x) => x.trim()) : label.includes(" - ") ? label.split(" - ").map((x) => x.trim()) : ["", label];
+    const id = uid("new");
+    S.songs[id] = { id, a: a || "", t: t || "(new link)", src: /soundcloud/.test(url) ? "sc" : "yt", d: null, url, home: null };
+    S.order[cid].push(id); n++;
+  }
+  commit();
+  return n;
+}
+function commit() { save(); render(); }
+
+// ---------- what changed (for the Markdown + the machine list)
+function changes() {
+  const out = { newRooms: [], newCrates: [], crateEdits: [], deletedCrates: [], moved: [], removed: [], added: [], order: [] };
+  for (const r of S.rooms) if (r.isNew) out.newRooms.push(r);
+  for (const c of S.crates) {
+    if (c.isNew) { out.newCrates.push(c); continue; }
+    const o = liveCrate(c.id);
+    if (c.deleted) { out.deletedCrates.push(c); continue; }
+    const d = {};
+    if (c.label !== o.label) d.label = [o.label, c.label];
+    if (c.color !== o.color) d.color = [o.color, c.color];
+    if (c.room !== o.room) d.room = [o.room, c.room];
+    if (Object.keys(d).length) out.crateEdits.push({ id: c.id, name: c.label, ...d });
+  }
+  for (const sid in S.songs) {
+    const s = S.songs[sid], now = crateOf(sid), was = s.home;
+    if (!was) { if (now) out.added.push({ ...s, to: now }); continue; }
+    if (S.removed.includes(sid)) out.removed.push({ ...s, from: was });
+    else if (now && now !== was) out.moved.push({ ...s, from: was, to: now });
+  }
+  for (const c of S.crates) {
+    const o = liveCrate(c.id); if (!o || c.deleted) continue;
+    const before = o.songs.map((x) => x.id), now = S.order[c.id].filter((x) => before.includes(x));
+    const kept = before.filter((x) => now.includes(x));
+    if (kept.join() !== now.join()) out.order.push({ id: c.id, name: c.label });
+  }
+  return out;
+}
+const cname = (id) => crateById(id)?.label ?? "?";
+const rname = (id) => roomById(id)?.name ?? id;
+const song = (s) => `${s.a ? s.a + " — " : ""}${s.t}`;
+function warnings() {
+  const w = [];
+  for (const r of S.rooms) {
+    const n = S.crates.filter((c) => c.room === r.id && !c.deleted).length;
+    if (r.isNew) w.push(`${r.name} is a new room: Claude builds the space and its crate spots.`);
+    else if (n > r.spots) w.push(`${r.name} has ${n} crates but ${r.spots} spot${r.spots === 1 ? "" : "s"}: needs ${n - r.spots} more built.`);
+  }
+  return w;
+}
+function changesMarkdown() {
+  const c = changes(), L = [];
+  const n = c.newRooms.length + c.newCrates.length + c.crateEdits.length + c.deletedCrates.length + c.moved.length + c.removed.length + c.added.length + c.order.length;
+  L.push(`# Hallucinate crate changes (crate map, ${new Date().toISOString().slice(0, 10)})`, "");
+  if (!n) { L.push("No changes."); return L.join("\n"); }
+  if (c.newRooms.length) { L.push("## New rooms"); for (const r of c.newRooms) L.push(`- ${r.name}`); L.push(""); }
+  if (c.newCrates.length) { L.push("## New crates"); for (const x of c.newCrates) L.push(`- ${x.label} (${x.color}) in ${rname(x.room)} · ${S.order[x.id].length} songs`); L.push(""); }
+  if (c.crateEdits.length) {
+    L.push("## Crate edits");
+    for (const e of c.crateEdits) {
+      const parts = [];
+      if (e.label) parts.push(`renamed "${e.label[0]}" → "${e.label[1]}"`);
+      if (e.room) parts.push(`moved ${rname(e.room[0])} → ${rname(e.room[1])}`);
+      if (e.color) parts.push(`colour ${e.color[0]} → ${e.color[1]}`);
+      L.push(`- ${e.name}: ${parts.join("; ")}`);
+    }
+    L.push("");
+  }
+  if (c.deletedCrates.length) { L.push("## Crates deleted (their songs are in Removed)"); for (const x of c.deletedCrates) L.push(`- ${x.label} (${rname(x.room)})`); L.push(""); }
+  if (c.moved.length) { L.push("## Songs moved"); for (const s of c.moved) L.push(`- ${song(s)}: ${cname(s.from)} → ${cname(s.to)}`); L.push(""); }
+  if (c.added.length) { L.push("## Songs added"); for (const s of c.added) L.push(`- ${song(s)} | ${s.url} → ${cname(s.to)}`); L.push(""); }
+  if (c.removed.length) { L.push("## Songs removed"); for (const s of c.removed) L.push(`- ${song(s)} (was in ${cname(s.from)})`); L.push(""); }
+  if (c.order.length) { L.push("## Reordered"); for (const x of c.order) L.push(`- ${x.name}`); L.push(""); }
+  const w = warnings(); if (w.length) { L.push("## Needs building"); for (const x of w) L.push(`- ${x}`); L.push(""); }
+  L.push("<details><summary>Exact change list for Claude</summary>", "", "```json");
+  L.push(JSON.stringify({
+    newRooms: c.newRooms.map((r) => ({ key: r.id, name: r.name })),
+    newCrates: c.newCrates.map((x) => ({ key: x.id, label: x.label, color: x.color, room: x.room, songs: S.order[x.id] })),
+    crateEdits: c.crateEdits, deletedCrates: c.deletedCrates.map((x) => x.id),
+    moved: c.moved.map((s) => ({ record: s.id, from: s.from, to: s.to })),
+    added: c.added.map((s) => ({ key: s.id, url: s.url, artist: s.a, title: s.t, to: s.to })),
+    removed: c.removed.map((s) => s.id),
+    order: Object.fromEntries(c.order.map((x) => [x.id, S.order[x.id].filter((i) => !i.startsWith("new-"))])),
+  }, null, 1));
+  L.push("```", "", "</details>");
+  return L.join("\n");
+}
+function layoutMarkdown() {
+  const L = [`# Hallucinate crate layout (${new Date().toISOString().slice(0, 10)})`, ""];
+  for (const r of S.rooms) {
+    const cs = S.crates.filter((c) => c.room === r.id && !c.deleted);
+    L.push(`## ${r.name}${r.isNew ? " (new room)" : ""}`);
+    if (!cs.length) L.push("_no crates_");
+    for (const c of cs) {
+      L.push(`### ${c.label} · ${S.order[c.id].length} songs`);
+      for (const sid of S.order[c.id]) L.push(`- ${song(S.songs[sid])}${S.songs[sid].d ? " (" + len(S.songs[sid].d) + ")" : ""}`);
+    }
+    L.push("");
+  }
+  return L.join("\n");
+}
+
+// ---------- render
+const board = $("#board"), tray = $("#tray");
+let confirmDel = null, addingCrate = null, addingRoom = false, linksFor = null;
+function songRow(sid, crateId) {
+  const s = S.songs[sid], was = s.home;
+  const cls = ["song", !was ? "added" : crateId !== was && crateId !== "__removed" ? "moved" : ""].join(" ");
+  const opts = [`<option value="">move to…</option>`, ...S.crates.filter((c) => !c.deleted && c.id !== crateId).map((c) => `<option value="${c.id}">${esc(c.label)}</option>`)].join("");
+  return `<li class="${cls}" draggable="true" data-song="${sid}" title="${esc(song(s))}">
+    <span class="sName"><b>${esc(s.a)}</b> ${esc(s.t)}</span>
+    <span class="sMeta">${s.src === "sc" ? "SC" : "YT"}${s.d ? " · " + len(s.d) : ""}</span>
+    <span class="sCtl">${crateId === "__removed"
+      ? `<button class="icon" data-restore="${sid}" title="put it back where it was" aria-label="restore">↺</button>`
+      : `<select class="icon sMove" data-move="${sid}" aria-label="move to crate">${opts}</select><button class="icon" data-remove="${sid}" title="remove" aria-label="remove">✕</button>`}</span>
+  </li>`;
+}
+function crateBox(c, q) {
+  const all = S.order[c.id];
+  const hits = q ? all.filter((sid) => song(S.songs[sid]).toLowerCase().includes(q)) : all;
+  if (q && !hits.length) return "";
+  const open = q || S.open[c.id] || all.length <= 12;
+  const shown = open ? hits : hits.slice(0, 12);
+  const rooms = S.rooms.map((r) => `<option value="${r.id}" ${r.id === c.room ? "selected" : ""}>${esc(r.name)}</option>`).join("");
+  return `<div class="crate ${c.isNew ? "isNew" : ""}" data-crate="${c.id}" style="--c:${esc(c.color)}">
+    <div class="cHead" draggable="true" data-dragcrate="${c.id}">
+      <span class="cName" data-rename="${c.id}" title="click to rename">${esc(c.label)}</span>
+      ${c.ingest ? `<span class="cTag">PASTE BOX</span>` : CURATED.has(c.slug) ? `<span class="cTag">CURATED</span>` : ""}
+      <span class="cCount">${all.length}</span>
+    </div>
+    <div class="cTools">
+      <input type="color" value="${esc(c.color)}" data-color="${c.id}" aria-label="crate colour">
+      <select data-croom="${c.id}" aria-label="room">${rooms}</select>
+      <button class="icon" data-links="${c.id}" title="paste links into this crate">＋ links</button>
+      ${confirmDel === c.id
+        ? `<span class="confirm">delete? songs go to Removed</span><button class="icon" data-delyes="${c.id}">yes</button><button class="icon" data-delno>no</button>`
+        : `<button class="icon" data-del="${c.id}" title="delete crate">🗑</button>`}
+    </div>
+    ${linksFor === c.id ? `<div class="addLinks"><textarea id="links-${c.id}" placeholder="One per line: Artist — Title | https://youtu.be/…"></textarea><div class="inline"><button class="btn" data-linksadd="${c.id}">add</button><button class="btn ghost" data-linksno>cancel</button></div></div>` : ""}
+    ${shown.length ? `<ol class="songs">${shown.map((sid) => songRow(sid, c.id)).join("")}</ol>` : `<div class="empty">empty · drop songs here</div>`}
+    ${!open && hits.length > 12 ? `<button class="more" data-open="${c.id}">show all ${hits.length}</button>` : ""}
+  </div>`;
+}
+function render() {
+  const q = $("#q").value.trim().toLowerCase();
+  let html = "";
+  for (const r of S.rooms) {
+    const cs = S.crates.filter((c) => c.room === r.id && !c.deleted);
+    const boxes = cs.map((c) => crateBox(c, q)).join("");
+    if (q && !boxes) continue;
+    const over = !r.isNew && cs.length > r.spots;
+    html += `<section class="room ${r.isNew ? "isNew" : ""}" data-room="${r.id}">
+      <div class="roomHead"><span class="roomName">${esc(r.name)}</span>
+        <span class="spots ${over ? "over" : ""}">${r.isNew ? "new room" : `${cs.length}/${r.spots} spots`}</span></div>
+      ${r.isNew ? `<div class="roomNote">Placeholder: Claude builds this space.</div>` : over ? `<div class="roomNote" style="color:var(--vermilion)">Over its spots: a new spot has to be built.</div>` : ""}
+      ${boxes}
+      ${addingCrate === r.id
+        ? `<div class="inline"><input id="newCrate" placeholder="crate name" aria-label="new crate name"><button class="btn" data-crateadd="${r.id}">add</button><button class="btn ghost" data-crateno>cancel</button></div>`
+        : `<button class="addCrate" data-addcrate="${r.id}">＋ new crate</button>`}
+    </section>`;
+  }
+  html += addingRoom
+    ? `<section class="room isNew"><div class="inline"><input id="newRoom" placeholder="room name" aria-label="new room name"><button class="btn" data-roomadd>add</button><button class="btn ghost" data-roomno>cancel</button></div></section>`
+    : `<button class="addRoom" data-addroom>＋ new room</button>`;
+  board.innerHTML = html;
+  tray.innerHTML = `<h2>Removed · ${S.removed.length}</h2>${S.removed.length ? `<ol class="songs">${S.removed.map((sid) => songRow(sid, "__removed")).join("")}</ol>` : `<div class="empty">Drag songs here (or ✕) to take them out.</div>`}`;
+  const total = Object.values(S.order).reduce((n, l) => n + l.length, 0);
+  $("#counts").textContent = `${S.rooms.length} rooms · ${S.crates.filter((c) => !c.deleted).length} crates · ${total} songs · live as of ${LIVE.generated}`;
+  const c = changes();
+  const n = c.newRooms.length + c.newCrates.length + c.crateEdits.length + c.deletedCrates.length + c.moved.length + c.removed.length + c.added.length + c.order.length;
+  $("#pending").textContent = n ? `${n} change${n === 1 ? "" : "s"}` : "";
+  $("#newCrate")?.focus(); $("#newRoom")?.focus(); if (linksFor) $(`#links-${linksFor}`)?.focus();
+}
+
+// ---------- drag and drop
+let drag = null;
+document.addEventListener("dragstart", (e) => {
+  const s = e.target.closest?.("[data-song]"), c = e.target.closest?.("[data-dragcrate]");
+  if (s) drag = { type: "song", id: s.dataset.song };
+  else if (c) drag = { type: "crate", id: c.dataset.dragcrate };
+  else return;
+  e.dataTransfer.effectAllowed = "move";
+  e.dataTransfer.setData("text/plain", drag.id);
+});
+const clearDrop = () => document.querySelectorAll(".drop").forEach((x) => x.classList.remove("drop"));
+function target(e) {
+  if (!drag) return null;
+  if (drag.type === "song") {
+    const row = e.target.closest?.("[data-song]"), crate = e.target.closest?.("[data-crate]"), t = e.target.closest?.("#tray");
+    if (t) return { el: t, to: "__removed" };
+    if (crate) return { el: row && row.dataset.song !== drag.id ? row : crate, to: crate.dataset.crate, before: row && row.dataset.song !== drag.id ? row.dataset.song : null };
+  } else {
+    const room = e.target.closest?.("[data-room]");
+    if (room) return { el: room, room: room.dataset.room };
+  }
+  return null;
+}
+document.addEventListener("dragover", (e) => { const t = target(e); if (!t) return; e.preventDefault(); clearDrop(); t.el.classList.add("drop"); });
+document.addEventListener("dragleave", (e) => { if (e.target.classList?.contains("drop")) e.target.classList.remove("drop"); });
+document.addEventListener("drop", (e) => {
+  const t = target(e); clearDrop(); if (!t) return; e.preventDefault();
+  if (drag.type === "song") moveSong(drag.id, t.to, t.before); else moveCrate(drag.id, t.room);
+  drag = null;
+});
+document.addEventListener("dragend", () => { drag = null; clearDrop(); });
+
+// ---------- clicks + inputs
+document.addEventListener("click", (e) => {
+  const d = e.target.closest?.("button, [data-rename]"); if (!d) return;
+  const ds = d.dataset;
+  if (ds.remove) moveSong(ds.remove, "__removed");
+  else if (ds.restore) { const s = S.songs[ds.restore]; moveSong(ds.restore, s.home && crateById(s.home) && !crateById(s.home).deleted ? s.home : S.crates.find((c) => !c.deleted).id); }
+  else if (ds.open) { S.open[ds.open] = true; commit(); }
+  else if (ds.addcrate) { addingCrate = ds.addcrate; render(); }
+  else if (ds.crateadd) { const v = $("#newCrate").value.trim(); addingCrate = null; if (v) addCrate(ds.crateadd, v); else render(); }
+  else if ("crateno" in ds) { addingCrate = null; render(); }
+  else if ("addroom" in ds) { addingRoom = true; render(); }
+  else if ("roomadd" in ds) { const v = $("#newRoom").value.trim(); addingRoom = false; if (v) addRoom(v); else render(); }
+  else if ("roomno" in ds) { addingRoom = false; render(); }
+  else if (ds.del) { confirmDel = ds.del; render(); }
+  else if (ds.delyes) { confirmDel = null; deleteCrate(ds.delyes); }
+  else if ("delno" in ds) { confirmDel = null; render(); }
+  else if (ds.links) { linksFor = ds.links; render(); }
+  else if (ds.linksadd) { const n = addLinks(ds.linksadd, $(`#links-${ds.linksadd}`).value); linksFor = null; render(); toast(n ? `Added ${n} link${n === 1 ? "" : "s"}` : "No links found"); }
+  else if ("linksno" in ds) { linksFor = null; render(); }
+  else if (ds.rename) {
+    const c = crateById(ds.rename);
+    d.innerHTML = `<input value="${esc(c.label)}" aria-label="crate name">`;
+    const inp = d.querySelector("input"); inp.focus(); inp.select();
+    const done = () => { const v = inp.value.trim(); if (v && v !== c.label) { c.label = v.toUpperCase(); commit(); } else render(); };
+    inp.addEventListener("blur", done, { once: true });
+    inp.addEventListener("keydown", (k) => { if (k.key === "Enter") inp.blur(); if (k.key === "Escape") { inp.removeEventListener("blur", done); render(); } });
+  }
+});
+document.addEventListener("change", (e) => {
+  const ds = e.target.dataset || {};
+  if (ds.move && e.target.value) moveSong(ds.move, e.target.value);
+  else if (ds.color) { crateById(ds.color).color = e.target.value; commit(); }
+  else if (ds.croom) moveCrate(ds.croom, e.target.value);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key !== "Enter") return;
+  if (e.target.id === "newCrate") $(`[data-crateadd]`)?.click();
+  if (e.target.id === "newRoom") $(`[data-roomadd]`)?.click();
+});
+$("#q").addEventListener("input", render);
+
+// ---------- export + reset
+const toast = (m) => { const t = $("#toast"); t.textContent = m; t.classList.add("show"); setTimeout(() => t.classList.remove("show"), 1900); };
+function copy(text, what) {
+  navigator.clipboard.writeText(text).then(() => toast(`Copied ${what}`)).catch(() => {
+    const ta = $("#mdOut"); ta.value = text; ta.hidden = false; ta.focus(); ta.select(); toast("Select all and copy from the box above the board");
+  });
+}
+$("#copyChanges").addEventListener("click", () => copy(changesMarkdown(), "changes as Markdown"));
+$("#copyAll").addEventListener("click", () => copy(layoutMarkdown(), "the full layout"));
+let resetArmed = false;
+$("#reset").addEventListener("click", (e) => {
+  if (!resetArmed) { resetArmed = true; e.target.textContent = "Tap again to discard your edits"; setTimeout(() => { resetArmed = false; e.target.textContent = "Reset to live"; }, 3500); return; }
+  resetArmed = false; e.target.textContent = "Reset to live";
+  S = fresh(); S.generated = LIVE.generated; commit(); toast("Back to the live layout");
+});
+render();
+</script>
