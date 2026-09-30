@@ -33,3 +33,8 @@ export function weeklyShuffle<T>(items: T[], salt: string, week: number = weekKe
   }
   return out;
 }
+
+/** When drop-week `week` ends (the next Friday 17:00 UTC), in ms. */
+export function weekEndsAt(week: number = weekKey()): number {
+  return EPOCH + (week + 1) * WEEK_MS;
+}

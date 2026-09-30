@@ -7,11 +7,11 @@ export type ActiveRef =
   | { type: "shelf"; id: string }
   | { type: "door"; to: string }
   | { type: "secret"; id: string }
-  | { type: "deck" | "bar" | "portal" | "goldrecord" | "keeper" | "wander" };
+  | { type: "deck" | "bar" | "portal" | "goldrecord" | "keeper" | "wander" | "board" };
 
 /** A clickable thing under the cursor (meshes carry this in userData.pick). */
 export interface PickRef {
-  kind: "shelf" | "door" | "keeper" | "secret" | "deck" | "bar" | "portal" | "goldrecord" | "wander";
+  kind: "shelf" | "door" | "keeper" | "secret" | "board" | "deck" | "bar" | "portal" | "goldrecord" | "wander";
   id?: string;
 }
 
@@ -66,6 +66,14 @@ export interface RoomView {
   /** floor height under a point (raised platforms, stairs) — default 0 */
   floorAt?: (x: number, y: number) => number;
   update?: (f: FrameInfo) => void;
+  /** the Listening Room's whiteboard: redraw it with this week's leaders */
+  setBoard?: (b: BoardView) => void;
+}
+
+/** What the whiteboard shows: this week's top diggers + collectors ("#014", n). */
+export interface BoardView {
+  diggers: [string, number][];
+  collectors: [string, number][];
 }
 
 export interface BuildCtx {

@@ -3512,3 +3512,140 @@ select,
   font-size: 10.5px;
   opacity: 0.5;
 }
+
+/* ---- the weekly board: the master's gossip + the zoomed-in whiteboard ---- */
+#masterTalk {
+  width: min(460px, calc(100vw - 32px));
+  display: grid;
+  gap: 12px;
+  padding: 20px 20px 16px;
+  background: rgba(26, 18, 11, 0.97);
+  border: 1px solid rgba(255, 179, 94, 0.4);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  color: var(--cream);
+}
+#masterTalk .mtWho {
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  letter-spacing: 0.22em;
+  color: var(--lantern);
+}
+#masterTalk .mtLines {
+  display: grid;
+  gap: 8px;
+}
+#masterTalk .mtLines p {
+  margin: 0;
+  font-family: "Shippori Mincho", serif;
+  font-weight: 600;
+  font-size: 17px;
+  line-height: 1.45;
+  color: var(--shoji);
+}
+#masterTalk .mtBtns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+#masterTalk .mtBtns button {
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  background: var(--panel);
+  color: var(--cream);
+  border: 1px solid rgba(241, 230, 210, 0.25);
+  border-radius: 999px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+#masterTalk .mtBtns button.primary {
+  background: var(--lantern);
+  color: var(--ink);
+  border-color: var(--lantern);
+}
+#boardBox {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100dvh - 120px);
+  overflow-y: auto;
+  display: grid;
+  gap: 14px;
+  padding: 20px 22px 16px;
+  background: #1d2621;
+  border: 10px solid #5b3f23;
+  border-radius: 6px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  color: rgba(240, 238, 228, 0.92);
+}
+#boardBox .bdHead {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+#boardBox .bdTitle {
+  font-family: "Shippori Mincho", serif;
+  font-weight: 800;
+  font-size: 24px;
+}
+#boardBox .bdReset,
+#boardBox .bdLegend,
+#boardBox .bdEmpty {
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  opacity: 0.6;
+}
+#boardBox .bdCols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18px;
+}
+@media (max-width: 520px) {
+  #boardBox .bdCols {
+    grid-template-columns: 1fr;
+  }
+}
+#boardBox h3 {
+  margin: 0 0 8px;
+  font-family: "DM Mono", monospace;
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--lantern);
+}
+#boardBox ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  counter-reset: bd;
+  display: grid;
+  gap: 4px;
+}
+#boardBox li {
+  counter-increment: bd;
+  display: grid;
+  grid-template-columns: 1.8em 1fr auto;
+  align-items: baseline;
+  padding: 4px 6px;
+  border-radius: 4px;
+  font-family: "DM Mono", monospace;
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+}
+#boardBox li::before {
+  content: counter(bd) ".";
+  opacity: 0.55;
+}
+#boardBox li.me {
+  background: rgba(255, 179, 94, 0.14);
+  outline: 1px solid rgba(255, 179, 94, 0.45);
+}
+#boardBox .bdMe {
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(240, 238, 228, 0.25);
+}

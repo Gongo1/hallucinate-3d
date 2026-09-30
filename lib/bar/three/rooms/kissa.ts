@@ -1,6 +1,6 @@
 import * as THREE from "three";
-import { ROOM, WALL, KISSA, KISSA_FEATURED } from "../../layout";
-import type { RoomBuilder } from "../types";
+import { ROOM, WALL, KISSA, KISSA_FEATURED, KISSA_BOARD } from "../../layout";
+import type { BoardView, RoomBuilder } from "../types";
 import { shell, WALL_H } from "../shared";
 import {
   box, block, cyl, cone, lump, mat, ownMat, glowMat, glowPool, halo, lamp, panel, billboard,
@@ -129,6 +129,68 @@ export const buildKissa: RoomBuilder = ({ room }) => {
   signGlow.scale.set(520, 170, 1);
   signGlow.position.set(ROOM.w / 2, signY, WALL + 30);
   g.add(signGlow);
+
+  /* ---------------- the weekly board: chalk on slate, left of the sign.
+     Redrawn with this week's leaders (setBoard); walk up + E to zoom in. */
+  const B = KISSA_BOARD;
+  let boardData: BoardView = { diggers: [], collectors: [] };
+  const drawBoard = (c: CanvasRenderingContext2D, w: number, h: number) => {
+    c.fillStyle = "#1d2621";
+    c.fillRect(0, 0, w, h);
+    // old chalk dust, never quite wiped
+    c.fillStyle = "rgba(235,235,225,.05)";
+    for (let i = 0; i < 9; i++) c.fillRect(12 + i * 26, 18 + (i % 3) * 30, 30, 10);
+    const chalk = "rgba(240,238,228,.92)";
+    c.textBaseline = "alphabetic";
+    c.fillStyle = chalk;
+    c.font = "800 15px 'Shippori Mincho', serif";
+    c.textAlign = "center";
+    c.fillText("THIS WEEK · 今週", w / 2, 20);
+    c.strokeStyle = "rgba(240,238,228,.35)";
+    c.lineWidth = 1;
+    c.beginPath();
+    c.moveTo(w / 2, 32);
+    c.lineTo(w / 2, h - 10);
+    c.stroke();
+    const col = (x: number, head: string, rows: [string, number][], empty: string) => {
+      c.textAlign = "left";
+      c.font = "500 9px 'DM Mono', monospace";
+      c.fillStyle = "rgba(255,179,94,.9)";
+      c.fillText(head, x, 44);
+      c.font = "500 12px 'DM Mono', monospace";
+      c.fillStyle = chalk;
+      if (!rows.length) {
+        c.font = "9px 'DM Mono', monospace";
+        c.fillStyle = "rgba(240,238,228,.55)";
+        c.fillText(empty, x, 64);
+        return;
+      }
+      rows.slice(0, 3).forEach(([tag, n], i) => {
+        c.fillText(`${i + 1}. ${tag}`, x, 64 + i * 19);
+        c.textAlign = "right";
+        c.fillText(String(n), x + w / 2 - 26, 64 + i * 19);
+        c.textAlign = "left";
+      });
+    };
+    col(12, "DIGGERS · kept", boardData.diggers, "open a crate…");
+    col(w / 2 + 12, "TRINKETS", boardData.collectors, "nobody yet");
+    c.textAlign = "center";
+    c.font = "8px 'DM Mono', monospace";
+    c.fillStyle = "rgba(240,238,228,.5)";
+    c.fillText("E · read the board", w / 2, h - 6);
+  };
+  const board = panel(B.w - 14, B.h - 14, drawBoard, B.w - 14, 3, true);
+  const boardFrame = box(B.w, B.h, 5, "#5b3f23");
+  const boardY = 92;
+  boardFrame.position.set(B.x, boardY, WALL + 12);
+  board.position.set(B.x, boardY, WALL + 14.8);
+  const ledge = box(B.w - 20, 4, 8, "#4f3720"); // the chalk ledge
+  ledge.position.set(B.x, boardY - B.h / 2 - 2, WALL + 17);
+  const chalkStick = box(10, 2.5, 2.5, "#f1ece0");
+  chalkStick.position.set(B.x + 60, boardY - B.h / 2 + 1, WALL + 18);
+  boardFrame.userData.pick = { kind: "board" };
+  board.userData.pick = { kind: "board" };
+  g.add(boardFrame, board, ledge, chalkStick);
 
   /* ---------------- tatami platform (walkable, raised a step) */
   const pf = platform;
@@ -518,6 +580,10 @@ export const buildKissa: RoomBuilder = ({ room }) => {
     floorAt: (x, y) =>
       x > pf.x && x < pf.x + pf.w && y > pf.y && y < pf.y + pf.h ? PLAT_H : 0,
     update: (f) => anim.forEach((a) => a(f)),
+    setBoard: (b) => {
+      boardData = b;
+      board.label.redraw(drawBoard);
+    },
   };
 };
 

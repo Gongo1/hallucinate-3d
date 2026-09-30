@@ -8,7 +8,7 @@ import { buildCrate, buildDoor, type CrateObj, type CrateView, type DoorView } f
 import { buildGameLayer, type GameLayer } from "./game";
 import { disposeTree, hex } from "./kit";
 import { ROOM_BUILDERS } from "./rooms";
-import type { ActiveRef, FrameInfo, GameFrame, PickRef, RoomView } from "./types";
+import type { ActiveRef, BoardView, FrameInfo, GameFrame, PickRef, RoomView } from "./types";
 
 // THE 3D VIEW. Owns the WebGL canvas, camera, lights, the current room's meshes,
 // the crates + doors, every character, and the screen-space finish (time-of-day
@@ -223,6 +223,7 @@ export class World3D {
     const build = ROOM_BUILDERS[room.scene] ?? ROOM_BUILDERS.kissa;
     const view = build({ room, curator: CURATORS[room.id] });
     this.roomView = view;
+    if (this.board) view.setBoard?.(this.board);
     this.dancers = !!view.dancers;
     const g = new THREE.Group();
     g.add(view.group);
@@ -346,6 +347,14 @@ export class World3D {
   }
   get view(): ViewMode {
     return this.viewMode;
+  }
+
+  /** This week's leaders for the Listening Room's whiteboard (kept across room
+   *  swaps, so it's drawn the moment you walk back in). */
+  private board: BoardView | null = null;
+  setBoard(b: BoardView) {
+    this.board = b;
+    this.roomView?.setBoard?.(b);
   }
 
   /** Ease the camera distance to `mult`× the normal follow distance over `ms`

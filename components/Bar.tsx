@@ -59,7 +59,16 @@ import { WorldMap } from "@/components/game/WorldMap";
 import { ArrivalBanner, Toasts, type Banner, type Toast } from "@/components/game/Hud";
 import { Door, type DoorPhase } from "@/components/game/Door";
 import * as sfx from "@/lib/bar/sfx";
-import { knockIn, myMembership, joinList, scoreAction, earnSetKey, type Membership } from "@/app/actions/members";
+import {
+  knockIn,
+  myMembership,
+  joinList,
+  scoreAction,
+  earnSetKey,
+  weekBoard,
+  type Membership,
+  type WeekBoard,
+} from "@/app/actions/members";
 import { memberTag } from "@/lib/members/tag";
 
 // The door ritual's timing (ms from the knock). Spec:
@@ -233,6 +242,11 @@ export default function Bar({
   const [listOpen, setListOpen] = useState(false);
   const listPendingRef = useRef(false); // first crate dug: offer the list once it's closed
   const memberToastRef = useRef<string | null>(null); // "You're #118" waits for the reveal
+  // ----- the weekly board: the whiteboard by the sign + the master's gossip -----
+  const [board, setBoard] = useState<WeekBoard | null>(null);
+  const [boardOpen, setBoardOpen] = useState(false);
+  const [masterOpen, setMasterOpen] = useState(false);
+  const refreshBoardRef = useRef<() => void>(() => {});
   const [prompt, setPrompt] = useState<string | null>(null);
   const [np, setNp] = useState<PlayerState>(EMPTY_NP);
   const [crate, setCrate] = useState<CrateState | null>(null);
@@ -317,7 +331,7 @@ export default function Bar({
     if (giftKey) giftShownAtRef.current = performance.now();
   }, [giftKey]);
   overlayOpenRef.current =
-    crate !== null || ingestOpen || dialogue !== null || dexOpen || mapOpen || giftShowing !== null;
+    crate !== null || ingestOpen || dialogue !== null || dexOpen || mapOpen || giftShowing !== null || boardOpen || masterOpen;
   const typingRef = useRef(false);
 
   // ----- dom + instance refs -----
@@ -416,7 +430,16 @@ export default function Bar({
         },
         onOpenIngest: () => setIngestOpen(true),
         // the bar master skips the room to the next track (cue first, then radio)
-        onMastersPick: () => presenceRef.current?.skip(),
+        // the master behind the bar: who's leading this week (+ a pick, on request)
+        onMastersPick: () => {
+          setMasterOpen(true);
+          refreshBoardRef.current();
+        },
+        // walked up to the whiteboard: zoom in on this week's board
+        onOpenBoard: () => {
+          setBoardOpen(true);
+          refreshBoardRef.current();
+        },
         onShowDeck: () => player.showDeck(),
         onTogglePlay: () => player.togglePlay(), // local mute toggle
         onNext: () => presenceRef.current?.skip(), // skip the whole room
@@ -437,6 +460,8 @@ export default function Bar({
           setDialogue(null);
           setDexOpen(false);
           setMapOpen(false);
+          setBoardOpen(false);
+          setMasterOpen(false);
         },
         isOverlayOpen: () => overlayOpenRef.current,
         isPlaying: () => playingRef.current,
@@ -689,6 +714,24 @@ export default function Bar({
     if (previewing) playerRef.current?.startPreview(previewing, previewStart(previewing));
     else playerRef.current?.endPreview();
   }, [previewing]);
+
+  // ----- the weekly board: fetched once you're inside, then every minute; the
+  // whiteboard in the Listening Room is redrawn from it
+  refreshBoardRef.current = () => {
+    void weekBoard()
+      .then((b) => {
+        if (!b) return;
+        setBoard(b);
+        engineRef.current?.setBoard(boardView(b));
+      })
+      .catch(() => {});
+  };
+  useEffect(() => {
+    if (doorPhase !== "gone") return;
+    refreshBoardRef.current();
+    const t = setInterval(() => refreshBoardRef.current(), 60_000);
+    return () => clearInterval(t);
+  }, [doorPhase]);
 
   // a ritual in flight when the bar unmounts shouldn't fire into a dead tree
   useEffect(() => clearArrival, [clearArrival]);
@@ -1417,6 +1460,24 @@ export default function Bar({
         />
       )}
 
+      {masterOpen && (
+        <MasterTalk
+          board={board}
+          onClose={() => setMasterOpen(false)}
+          onBoard={() => {
+            setMasterOpen(false);
+            setBoardOpen(true);
+          }}
+          onPick={() => {
+            setMasterOpen(false);
+            presenceRef.current?.skip();
+            toast("The master reaches for the next record…", "plain", 3200);
+          }}
+        />
+      )}
+
+      {boardOpen && <BoardOverlay board={board} onClose={() => setBoardOpen(false)} />}
+
       {listOpen && (
         <ListCard
           memberNo={memberNo}
@@ -1473,6 +1534,152 @@ export default function Bar({
           onFit={() => setFitOpen(true)}
         />
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------ the weekly board */
+const byDigs = (b: WeekBoard) => [...b.top].filter((r) => r.digs > 0).sort((x, y) => y.digs - x.digs);
+const byTrinkets = (b: WeekBoard) => [...b.top].filter((r) => r.trinkets > 0).sort((x, y) => y.trinkets - x.trinkets);
+
+/** what the whiteboard on the wall shows (top 3 of each) */
+function boardView(b: WeekBoard) {
+  return {
+    diggers: byDigs(b).slice(0, 3).map((r) => [memberTag(r.number), r.digs] as [string, number]),
+    collectors: byTrinkets(b).slice(0, 3).map((r) => [memberTag(r.number), r.trinkets] as [string, number]),
+  };
+}
+
+function ordinal(n: number): string {
+  const s = n % 100 >= 11 && n % 100 <= 13 ? "th" : (["th", "st", "nd", "rd"][n % 10] ?? "th");
+  return `${n}${s}`;
+}
+
+/** "Friday at noon · in 2d 4h" */
+function resetWhen(endsAt: number): string {
+  const h = Math.max(0, (endsAt - Date.now()) / 3_600_000);
+  const rel = h < 24 ? `in ${Math.max(1, Math.round(h))}h` : `in ${Math.floor(h / 24)}d ${Math.round(h % 24)}h`;
+  return `Friday at noon (Austin) · ${rel}`;
+}
+
+/** The master's gossip: who's digging, who's collecting, where you stand. */
+function masterLines(b: WeekBoard | null): string[] {
+  if (!b) return ["Busy night. Ask me again in a minute."];
+  const out: string[] = [];
+  const dig = byDigs(b)[0];
+  const col = byTrinkets(b)[0];
+  if (!dig && !col) out.push("Quiet week so far. Keep a record or two and your number's the first one on my board.");
+  if (dig) out.push(`${memberTag(dig.number)} has been digging all week: ${dig.digs} ${dig.digs === 1 ? "record" : "records"} kept.`);
+  if (col) out.push(`${memberTag(col.number)}'s carrying the most trinkets: ${col.trinkets}.`);
+  if (b.me) {
+    out.push(
+      b.me.place
+        ? `You? ${ordinal(b.me.place)} overall, ${b.me.score} points.`
+        : b.me.score
+          ? `You've got ${b.me.score} points. Not up there yet. Keep digging.`
+          : "You're not on the board yet. Open a crate, keep what moves you."
+    );
+  }
+  out.push(`Board gets wiped ${resetWhen(b.endsAt).replace(" · ", ", ")}.`);
+  return out;
+}
+
+/** Talking to the master behind the bar. */
+function MasterTalk({
+  board,
+  onClose,
+  onBoard,
+  onPick,
+}: {
+  board: WeekBoard | null;
+  onClose: () => void;
+  onBoard: () => void;
+  onPick: () => void;
+}) {
+  return (
+    <div
+      className="overlay open"
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div id="masterTalk" role="dialog" aria-label="The master">
+        <div className="mtWho">THE MASTER · 店主</div>
+        <div className="mtLines">
+          {masterLines(board).map((l) => (
+            <p key={l}>{l}</p>
+          ))}
+        </div>
+        <div className="mtBtns">
+          <button type="button" className="primary" onClick={onBoard}>
+            read the board
+          </button>
+          <button type="button" onClick={onPick}>
+            pour me a pick
+          </button>
+          <button type="button" onClick={onClose}>
+            thanks
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Zoomed in on the whiteboard: this week's diggers + trinket collectors. */
+function BoardOverlay({ board, onClose }: { board: WeekBoard | null; onClose: () => void }) {
+  const me = board?.me?.number;
+  const list = (rows: WeekBoard["top"], val: (r: WeekBoard["top"][number]) => number, empty: string) =>
+    rows.length ? (
+      <ol>
+        {rows.slice(0, 10).map((r) => (
+          <li key={r.number} className={r.number === me ? "me" : ""}>
+            <span className="bdTag">{memberTag(r.number)}</span>
+            <span className="bdVal">{val(r)}</span>
+          </li>
+        ))}
+      </ol>
+    ) : (
+      <div className="bdEmpty">{empty}</div>
+    );
+  return (
+    <div
+      className="overlay open"
+      onPointerDown={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+    >
+      <div className="ovClose" onClick={onClose}>
+        CLOSE ✕
+      </div>
+      <div id="boardBox">
+        <div className="bdHead">
+          <span className="bdTitle">THIS WEEK · 今週</span>
+          {board && <span className="bdReset">wiped {resetWhen(board.endsAt)}</span>}
+        </div>
+        {!board ? (
+          <div className="bdEmpty">The board&apos;s being chalked up. Try again in a moment.</div>
+        ) : (
+          <div className="bdCols">
+            <section>
+              <h3>Diggers · records kept</h3>
+              {list(byDigs(board), (r) => r.digs, "Nobody's kept a record yet. Open a crate.")}
+            </section>
+            <section>
+              <h3>Trinkets collected</h3>
+              {list(byTrinkets(board), (r) => r.trinkets, "No trinkets handed out yet.")}
+            </section>
+          </div>
+        )}
+        {board?.me && (
+          <div className="bdMe">
+            You · {memberTag(board.me.number)}
+            {board.me.place ? ` · ${ordinal(board.me.place)} overall` : ""} · {board.me.digs} kept · {board.me.trinkets}{" "}
+            trinkets · {board.me.score} pts
+          </div>
+        )}
+        <div className="bdLegend">keep a record 10 · trinket 15 · secret passage 25 · realm badge 40 · stay for an ON AIR set 20</div>
+      </div>
     </div>
   );
 }

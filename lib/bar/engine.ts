@@ -5,11 +5,11 @@ import { SKINS, HATS, NECKS, EYES, parseGear, type Fit, type Hat, type Neck, typ
 import {
   ROOM, WALL, KISSA, KISSA_SEATED, KISSA_MASTER, GARDEN, OMAKASE, BERLIN, TEA, CURATOR,
   PLAYA, WAREHOUSE, ROOFTOP, TRATTORIA, ARCHIVE, LAB_GRID, LAB_COLS, LAB_ROWS, LAB_CW, LAB_CH,
-  DIG_SPOTS, KISSA_FEATURED, type DigSpot,
+  DIG_SPOTS, KISSA_FEATURED, KISSA_BOARD, type DigSpot,
 } from "./layout";
 import { World3D, type Actor, type ViewMode } from "./three/world";
 import { DANCE_MOVES, DANCE_SECONDS, type DanceMove } from "./three/character";
-import type { ActiveRef, PickRef } from "./three/types";
+import type { ActiveRef, BoardView, PickRef } from "./three/types";
 import { REALMS, WANDER_CAT, secretsIn } from "./realms";
 
 // The whole game, ported from prototype.html — rooms, fixtures, NPCs, input
@@ -44,6 +44,8 @@ type Zone =
   | { type: "shelf"; cx: number; cy: number; r: number; shelf: ShelfObj }
   | { type: "deck"; cx: number; cy: number; r: number }
   | { type: "bar"; cx: number; cy: number; r: number }
+  // the weekly board on the back wall (kissa)
+  | { type: "board"; cx: number; cy: number; r: number }
   | { type: "portal"; cx: number; cy: number; r: number }
   | { type: "goldrecord"; cx: number; cy: number; r: number; url: string; label?: string }
   | { type: "door"; cx: number; cy: number; r: number; door: RoomDoor }
@@ -80,6 +82,8 @@ export interface EngineCallbacks {
   onBrowseShelf: (shelf: Shelf) => void;
   onOpenIngest: () => void;
   onMastersPick: () => void;
+  /** walked up to the weekly board (kissa) — zoom in on it */
+  onOpenBoard?: () => void;
   onShowDeck: () => void;
   onTogglePlay: () => void;
   onNext: () => void;
@@ -278,6 +282,11 @@ export class BarEngine {
     this.stopWalking();
     this.danceMove = { move, at: performance.now() };
     return move;
+  }
+
+  /** This week's leaders for the whiteboard — view-only, passed to the 3D. */
+  setBoard(b: BoardView) {
+    this.view.setBoard(b);
   }
 
   /** The door ritual's camera dolly — passed straight to the view. */
@@ -553,6 +562,8 @@ export class BarEngine {
       cy: KISSA.bar.y + KISSA.bar.h / 2,
       r: 92,
     });
+    // the weekly board: read it standing just in front (it's on the wall)
+    this.zones.push({ type: "board", cx: KISSA_BOARD.x, cy: KISSA_BOARD.readY, r: 70 });
     // Rave portal: the doorway frame is solid (you can't walk into the wall); its
     // prompt/charge zone sits in FRONT of the rift (to the right, into the room),
     // so approach + explicit E is the only path — never a walk-through.
@@ -830,6 +841,8 @@ export class BarEngine {
       else this.cb.onBrowseShelf(z.shelf.data);
     } else if (z.type === "bar") {
       this.cb.onMastersPick();
+    } else if (z.type === "board") {
+      this.cb.onOpenBoard?.();
     } else if (z.type === "deck") {
       this.cb.onShowDeck();
     } else if (z.type === "portal") {
@@ -1397,7 +1410,8 @@ export class BarEngine {
           ? `Pour in new records <b>新着</b>`
           : `Browse <b>${best.shelf.data.label}</b>`;
       if (best.type === "deck") s = `Drop in on the <b>house radio</b>`;
-      if (best.type === "bar") s = `Ask the master for a <b>pour &amp; a pick</b>`;
+      if (best.type === "bar") s = `Talk to the <b>master</b> · who's leading this week`;
+      if (best.type === "board") s = `Read <b>the board</b> · this week's diggers`;
       if (best.type === "portal") s = `Enter the <b>rave</b>?`;
       if (best.type === "goldrecord")
         s = best.label ?? `Give <b>Houseum</b> their flowers — open their YouTube ↗`;

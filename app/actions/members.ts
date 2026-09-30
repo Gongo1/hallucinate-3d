@@ -10,7 +10,7 @@ import {
 } from "@/lib/members/auth";
 import { adminClient, createMember, foldMember, keyInfo, memberNumber, mintKeys, redeemKey } from "@/lib/members/store";
 import { POINTS, type ScoreKind } from "@/lib/members/tag";
-import { weekKey } from "@/lib/bar/week";
+import { weekEndsAt, weekKey } from "@/lib/bar/week";
 
 // Membership, the Sombra list, and the weekly board's scoring. Identity is the
 // signed httpOnly member cookie — the client never says who it is. Every action
@@ -169,4 +169,49 @@ export async function earnSetKey(liveStartedAt: number): Promise<{ ok: boolean }
   await sb.from("hallu_members").update({ keys_earned: ((m?.keys_earned as number) ?? 0) + 1 }).eq("id", id);
   await mintKeys(id, 1);
   return { ok: true };
+}
+
+export type BoardRow = { number: number; digs: number; trinkets: number; score: number };
+export type WeekBoard = {
+  week: number;
+  /** when this week's board resets (Friday noon in Austin), ms */
+  endsAt: number;
+  /** this week's leaders, by score (top 20) */
+  top: BoardRow[];
+  /** you, with your place by score (null place = not in the top 20 yet) */
+  me: (BoardRow & { place: number | null }) | null;
+};
+
+/** The weekly board: the bartender's gossip and the whiteboard by the sign. */
+export async function weekBoard(): Promise<WeekBoard | null> {
+  const sb = adminClient();
+  if (!sb) return null;
+  const week = weekKey();
+  const { data, error } = await sb.rpc("hallu_board", { w: week });
+  if (error) return null;
+  const top: BoardRow[] = ((data ?? []) as Record<string, number | string>[]).map((r) => ({
+    number: Number(r.number),
+    digs: Number(r.digs),
+    trinkets: Number(r.trinkets),
+    score: Number(r.score),
+  }));
+  let me: WeekBoard["me"] = null;
+  const id = await currentMemberId();
+  const n = id ? await memberNumber(id) : null;
+  if (id && n !== null) {
+    const i = top.findIndex((r) => r.number === n);
+    if (i >= 0) me = { ...top[i], place: i + 1 };
+    else {
+      const { data: ev } = await sb.from("hallu_events").select("kind, points").eq("member_id", id).eq("week", week);
+      const rows = ev ?? [];
+      me = {
+        number: n,
+        digs: rows.filter((e) => e.kind === "dig").length,
+        trinkets: rows.filter((e) => e.kind === "gift").length,
+        score: rows.reduce((s, e) => s + (e.points as number), 0),
+        place: null,
+      };
+    }
+  }
+  return { week, endsAt: weekEndsAt(week), top, me };
 }
