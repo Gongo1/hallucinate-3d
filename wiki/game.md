@@ -83,3 +83,10 @@ Flipping a crate or turning up a dig plays **30s of that record, just for you**.
 - **Copy changes as Markdown** ends with an exact JSON change list (record ids) for Claude to apply.
 - New rooms and rooms past their crate spots are flagged: those need code (a room builder, DIG_SPOTS).
 - Published copy: https://claude.ai/artifact/HyhhRVCVMXPvCuvwG1ViSJ
+
+## Sombra Radio UI (Sep 30)
+- **Top bar:** Now Playing (● LIVE · Sombra Radio · N listening) · Discover (my crate, map, board, wander) · Contribute (submit, the list, invite) · World (fit, camera, mute, sombraproject.com) · ? (the three actions + keys). `navContent(k)` in Bar.tsx renders each; desktop = `#navPanel.pop`, phone = `#navPanel.sheet` with every section.
+- **Phones:** `#np` is the bottom bar. The stick, E, dance and chat are lifted 66px, and `#radioNav` + `#venueClock` are hidden. VenueClock must stay mounted because it pushes the phase light.
+- **The omakase counter** (`OMAKASE.radio`, zone + pick `radio`) → `RadioCounter`: who picks, how to add.
+- **Welcome:** one first-visit card (`WELCOME_KEY`) carries the member number. `welcomeDueRef` suppresses the "You're #N" toast and the hub's realm banner that visit.
+- **Wording:** crate prompt "Dig through X", "✦ Save to my crate", "⤵ Play next for the room", "Submit a record".
