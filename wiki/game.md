@@ -71,3 +71,15 @@ Flipping a crate or turning up a dig plays **30s of that record, just for you**.
   - New crates are owner-only (`ingest.ts`) and are created in the garden.
 - **Weekly reshuffle:** `lib/bar/week.ts` `weeklyShuffle(records, shelf.id)`, applied in `loadShelves`. The week turns over Friday 17:00 UTC, and THIS WEEK is not shuffled.
 - **No link-outs to Beatport/DigDeeper, ever** (owner rule). The weekly drop is Austin-approved picks matched to YouTube/SoundCloud uploads.
+
+## Crates as the back of a record + play counts (bdde6c3, Sep 30)
+- **A crate opens as a paper back cover:** the full tracklist split into Side A / B, play counts (▶) and lengths per row, and ✦ on rows already in your Dex. The selected record sits on the left with sleeve, cue and keep.
+- **Controls:** ↑/↓ (or ←/→) move, ↵ cues, K keeps. The listener is capture-phase, so the engine never sees those keys while a crate is open. On a phone, tap a row.
+- **The preview follows the selection** after a 260ms beat, so arrowing down a list doesn't load every row.
+- **Play counts:** `records.play_count` (migration `20260930c`). The room host reports each new track once (`presence.amHost()` → `notePlay` → `hallu_note_play()`, which ignores repeats within 3 minutes). Counting started 2026-09-30, with no history before it. `loadShelves` loads without counts if the migration hasn't run.
+
+## The Crate Map (owner tool)
+`node scripts/crate-map/build.mjs <out.html>` builds a 2D board of every room → crate → song from the live library: drag songs and crates, rename and recolor, add crates, rooms and links, and a removed tray.
+- **Copy changes as Markdown** ends with an exact JSON change list (record ids) for Claude to apply.
+- New rooms and rooms past their crate spots are flagged: those need code (a room builder, DIG_SPOTS).
+- Published copy: https://claude.ai/artifact/HyhhRVCVMXPvCuvwG1ViSJ
