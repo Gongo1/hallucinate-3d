@@ -311,7 +311,7 @@ export const REALMS: Record<string, Realm> = {
   },
   chamber: {
     id: "chamber",
-    name: "CHAMBER OF SECRETS",
+    name: "UNDERCROFT",
     kanji: "秘密",
     tagline: "below the archive · candlelit",
     lore: "A stone hall under the Archive: a carved face, a stage in its mouth, black water on both sides, and candles nobody lit.",
@@ -319,7 +319,7 @@ export const REALMS: Record<string, Realm> = {
     color: "#3a8a5a",
     keeper: {
       name: "Basilio",
-      title: "keeper of the chamber",
+      title: "keeper of the undercroft",
       x: 880,
       y: 620,
       fit: fit("#cf9268", "#3f7d5a", "#15151a", "none", { top: "haori", neck: "chain" }),
@@ -395,7 +395,7 @@ export const SECRETS: Secret[] = [
     b: { room: "housemiam", x: 960, y: 650 },
   },
   {
-    // the Chamber's only way in: a hatch in the Archive's quiet top-right corner
+    // the Undercroft's only way in: a hatch in the Archive's quiet top-right corner
     id: "serpent-stair",
     name: "The Serpent Stair",
     a: { room: "archive", x: 1010, y: 230 },

@@ -6,7 +6,7 @@ import {
   box, block, cyl, cone, mat, glowMat, glowPool, halo, lamp, panel, motes, shade, rng,
 } from "../kit";
 
-// CHAMBER OF SECRETS — a stone hall under the Archive. A giant carved face fills
+// UNDERCROFT — a stone hall under the Archive. A giant carved face fills
 // the back wall with a stage jutting out of its open mouth, a channel of dark
 // green water down each side of the stage, serpent pillars lining the walkway,
 // and candles floating overhead. The stage is walkable: floorAt lifts you onto it.
@@ -258,7 +258,7 @@ export const buildChamber: RoomBuilder = ({ room }) => {
     c.fillStyle = "#b8e8c0";
     c.shadowColor = "rgba(0,0,0,.7)";
     c.shadowBlur = 8;
-    c.fillText("秘密 · CHAMBER OF SECRETS", w / 2, h / 2 + 1);
+    c.fillText("秘密 · UNDERCROFT", w / 2, h / 2 + 1);
   }, 460);
   plate.rotation.x = -Math.PI / 2;
   plate.position.set(ROOM.w / 2, 0.6, ROOM.h - 52);
