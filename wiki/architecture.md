@@ -39,13 +39,30 @@ under the flow rules and rebroadcasts. Followers seek to `now - startedAt` so
 everyone hears ~the same spot (not frame-perfect — iframe limitation).
 
 ## Realtime channel `hallucinate-bar` — event map
-- `presence` (sync) — roster + per-user color/hair + venue-room (`vroom`)
+- `presence` (sync) — roster + per-user look + venue-room (`vroom`) + look version `v`
+- broadcast `look` — instant look change (fit panel); also sent to newcomers on `room-req`
 - broadcast `move` — ~10Hz positions (+ room) → moving avatars
 - broadcast `chat` / `react` — lobby chat + emoji
 - broadcast `room` — the authoritative RoomState (host → all)
 - broadcast `intent` — anyone's cue/skip request → host
 - broadcast `room-req` — newcomer asks host for current state
 - broadcast `admin` — **server-origin** god-mode command (see [god mode](god-mode.md))
+
+### Presence rate limit (2026-09-30, 7802f9a)
+Supabase allows **5 presence calls per client per 30s** and *closes the channel* on
+the 6th (`"Client presence rate limit exceeded"`). Before 7802f9a every fit-panel
+tap and door re-tracked, so a few try-ons cut a listener off the lobby until
+reload. Rules now:
+- Never call `channel.track()` directly — go through `retrack()` (budget 4/31s,
+  one trailing send with the latest meta).
+- Anything that must feel instant goes as a broadcast (`look`, `move`); versioned
+  by `v` so a lagging presence meta never undoes it (`applyLook`).
+- A server-closed channel rebuilds itself (`restart()`); `stop()` uses
+  `removeChannel` because `sb.channel(name)` returns an existing channel.
+- A socket rejoin re-tracks; a tab coming back from hidden probes the socket;
+  heartbeats run in a worker (`realtime.worker: true`).
+- Needs supabase-js ≥ 2.117: realtime-js 2.106.2 stripped `phx_ref` from stored
+  metas, so old metas never left (stale shirts, ghost rooms).
 
 ## Data model (Supabase, additive to Sombra's DB)
 ```

@@ -31,7 +31,7 @@ left wall.
 ## Presence: venue-wide, avatars per-room
 Presence + the **listener count are whole-venue**, but each avatar only renders in
 the room it's currently in. Implemented via a SEPARATE `venueRoom` field in
-presence (NOT RoomState — that's audio). `setRoom()` re-tracks presence; `vroom` in
+presence (NOT RoomState — that's audio). `setRoom()` re-tracks presence (rate-budgeted, see architecture); `vroom` in
 the presence meta + `room` in the move broadcast; `RemotePlayer.room` filters which
 avatars draw (`engine.remoteEntities` filters by current room).
 
