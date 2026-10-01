@@ -507,12 +507,12 @@ const ARCHIVE: RoomDef = {
   defaultSpawn: { x: ROOM_W / 2, y: 600 },
 };
 
-// The Chamber of Secrets — a stone hall under the Archive with a stage in the
+// The Undercroft — a stone hall under the Archive with a stage in the
 // mouth of a carved face. No doors on purpose: the only way in or out is the
 // hatch (SECRETS in realms.ts), so you arrive at the front by that hatch.
 const CHAMBER: RoomDef = {
   id: "chamber",
-  name: "秘密 · CHAMBER OF SECRETS",
+  name: "秘密 · UNDERCROFT",
   scene: "chamber",
   doors: [],
   spawns: {},

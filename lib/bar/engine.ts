@@ -321,7 +321,7 @@ export class BarEngine {
 
   /** Wander to a random realm (the lucky cat / the map's dice). */
   wander(): string | null {
-    // door-less rooms (the Chamber) are reached only by their secret hatch
+    // door-less rooms (the Undercroft) are reached only by their secret hatch
     const ids = Object.keys(ROOMS).filter((r) => r !== this.room.id && ROOMS[r].doors.length > 0);
     const id = ids[Math.floor(Math.random() * ids.length)];
     return this.travelTo(id) ? id : null;

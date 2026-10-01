@@ -199,7 +199,7 @@ export const ARCHIVE = {
   catalog: { x: 950, y: 600 }, // the card catalogue
 };
 
-// ----- CHAMBER OF SECRETS (reached only by the hatch in the Archive) -----
+// ----- UNDERCROFT (reached only by the hatch in the Archive) -----
 // A stone face carved into the back wall, a stage jutting out from its mouth, and
 // a water channel down each side of the stage, so it's only reachable from the
 // front. The stage is walkable (raised, not solid); the face + water + pillars are.
@@ -330,7 +330,7 @@ export const DOOR_THEME: Record<string, DoorTheme> = {
   rooftop: { name: "SKYLINE", kanji: "空", vibe: "melodic · city far below", accent: "#bfe0ff", glow: "#7ab8d8", frame: "#2c3a4a", style: "cosmic" },
   labyrinth: { name: "LABYRINTH", kanji: "迷路", vibe: "get lost · find the centre", accent: "#cfe8a8", glow: "#86b86a", frame: "#3e4a2c", style: "garden" },
   archive: { name: "THE ARCHIVE", kanji: "書庫", vibe: "the deep history shelf", accent: "#c8e8c8", glow: "#3f7d5a", frame: "#33402e", style: "tearoom" },
-  chamber: { name: "CHAMBER OF SECRETS", kanji: "秘密", vibe: "below the archive · candlelit", accent: "#b8e8c0", glow: "#3a8a5a", frame: "#2a302c", style: "berlin" },
+  chamber: { name: "UNDERCROFT", kanji: "秘密", vibe: "below the archive · candlelit", accent: "#b8e8c0", glow: "#3a8a5a", frame: "#2a302c", style: "berlin" },
 };
 
 // Crates lean into the room they sit in — the bin material, the disc-label colour,
