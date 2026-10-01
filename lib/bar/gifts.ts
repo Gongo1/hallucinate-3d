@@ -72,6 +72,7 @@ export const GIFTS: Gift[] = [
   keep("rolling-pin", "Rolling-Pin Charm", "🥖", "A tribute to Il Mattarello — handmade, unhurried, Baja.", "https://www.ilmattarello.mx/"),
   keep("archive-card", "Archive Card", "🗂️", "Checked out: one deep cut. Sombra digs B-sides, never anthems."),
   keep("hedge-leaf", "Pressed Hedge Leaf", "🍃", "Picked in the labyrinth. The best records turn up when you're lost."),
+  keep("serpent-fang", "Serpent Fang", "🐍", "From the chamber under the Archive. Sombra means shadow; the best nights are the ones you had to find."),
 ];
 
 export const GIFT_BY_ID: Record<string, Gift> = Object.fromEntries(GIFTS.map((g) => [g.id, g]));
@@ -90,6 +91,7 @@ export const KEEPER_GIFT: Record<string, string> = {
   mattarello: "rolling-pin",
   archive: "archive-card",
   labyrinth: "hedge-leaf",
+  chamber: "serpent-fang",
 };
 /** bringing records to the bar (the 新着 paste box) earns the USB first */
 export const INGEST_GIFT = "usb";

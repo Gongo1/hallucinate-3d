@@ -4,7 +4,7 @@ import { CURATORS, type CuratorRoom } from "./curators";
 import { SKINS, HATS, NECKS, EYES, parseGear, type Fit, type Hat, type Neck, type Eyes } from "./fits";
 import {
   ROOM, WALL, KISSA, KISSA_SEATED, KISSA_MASTER, GARDEN, OMAKASE, BERLIN, TEA, CURATOR,
-  PLAYA, WAREHOUSE, ROOFTOP, TRATTORIA, ARCHIVE, LAB_GRID, LAB_COLS, LAB_ROWS, LAB_CW, LAB_CH,
+  PLAYA, WAREHOUSE, ROOFTOP, TRATTORIA, ARCHIVE, CHAMBER, LAB_GRID, LAB_COLS, LAB_ROWS, LAB_CW, LAB_CH,
   DIG_SPOTS, KISSA_FEATURED, KISSA_BOARD, KISSA_DROPBOX, type DigSpot,
 } from "./layout";
 import { World3D, type Actor, type ViewMode } from "./three/world";
@@ -321,7 +321,8 @@ export class BarEngine {
 
   /** Wander to a random realm (the lucky cat / the map's dice). */
   wander(): string | null {
-    const ids = Object.keys(ROOMS).filter((r) => r !== this.room.id);
+    // door-less rooms (the Chamber) are reached only by their secret hatch
+    const ids = Object.keys(ROOMS).filter((r) => r !== this.room.id && ROOMS[r].doors.length > 0);
     const id = ids[Math.floor(Math.random() * ids.length)];
     return this.travelTo(id) ? id : null;
   }
@@ -500,6 +501,7 @@ export class BarEngine {
     else if (this.room.scene === "trattoria") this.buildTrattoriaFixtures();
     else if (this.room.scene === "archive") this.buildArchiveFixtures();
     else if (this.room.scene === "labyrinth") this.buildLabyrinthFixtures();
+    else if (this.room.scene === "chamber") this.buildChamberFixtures();
 
     this.buildGameZones();
 
@@ -677,6 +679,15 @@ export class BarEngine {
     ARCHIVE.stacks.forEach((s) => this.solid(s.x, s.y, s.w, s.h));
     this.solid(ARCHIVE.table.x, ARCHIVE.table.y, ARCHIVE.table.w, ARCHIVE.table.h);
     this.solid(ARCHIVE.catalog.x - 22, ARCHIVE.catalog.y - 16, 44, 36);
+  }
+
+  private buildChamberFixtures() {
+    // the stage is walkable (raised in 3D); the face behind it and the water
+    // either side are not, so the stage is only reachable from the front
+    const f = CHAMBER.face;
+    this.solid(f.x, f.y, f.w, f.h);
+    CHAMBER.water.forEach((w) => this.solid(w.x, w.y, w.w, w.h));
+    CHAMBER.pillars.forEach((p) => this.solid(p.x - 20, p.y - 20, 40, 40));
   }
 
   private buildLabyrinthFixtures() {
@@ -1324,6 +1335,10 @@ export class BarEngine {
       return [
         this.npc([{ x: 280, y: 270 }, { x: 740, y: 270 }, { x: 740, y: 430 }, { x: 280, y: 430 }], "#6a7d5a", "#241812"),
       ];
+    }
+    if (roomId === "chamber") {
+      // one listener pacing the front of the stage, clear of the water channels
+      return [this.npc([{ x: 330, y: 420 }, { x: 810, y: 420 }, { x: 700, y: 560 }, { x: 440, y: 560 }], "#3a8a5a", "#15151a")];
     }
     if (roomId === "labyrinth") {
       // a lone wanderer pacing the open top corridor (cols 4–10, row0) — proof
