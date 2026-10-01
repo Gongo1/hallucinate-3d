@@ -10,6 +10,11 @@ import {
 } from "./flow";
 import { defaultFit, gearCode, type Fit } from "./fits";
 
+// Supabase Realtime allows 5 presence calls per client per 30s and CLOSES the
+// channel on the 6th ("Client presence rate limit exceeded"). Stay under it.
+const TRACK_BUDGET = 4;
+const TRACK_WINDOW_MS = 31_000;
+
 // The lobby + the SHARED ROOM PLAYER. One Supabase Realtime channel carries
 // several ephemeral streams (no DB tables — additive to the shared sombra
 // project, scoped by the channel name):
@@ -123,6 +128,8 @@ interface TrackMeta {
   /** which VENUE ROOM (scenery) this listener is in — for per-room avatar render.
    *  Distinct from RoomState (the shared audio/cue state); presence is venue-wide. */
   vroom?: string;
+  /** look version — newer wins, so a lagging presence meta can't undo a live change */
+  v?: number;
 }
 
 export class BarPresence {
@@ -150,6 +157,13 @@ export class BarPresence {
    *  by the time the user taps to enter (mobile audio must start inside that tap) */
   private lurking = false;
   private pumpTimer: ReturnType<typeof setInterval> | null = null;
+  private hiddenAt = 0;
+  // presence re-tracks are rate-limited (TRACK_BUDGET); looks also go out as an
+  // instant "look" broadcast, versioned so the older copy never wins
+  private lookV = 0;
+  private lookVById = new Map<string, number>();
+  private trackTimes: number[] = [];
+  private trackTimer: ReturnType<typeof setTimeout> | null = null;
   private roomTimer: ReturnType<typeof setInterval> | null = null;
   /** follower fallback: advance ourselves if the host never answers our "ended" */
   private endWatchdog: ReturnType<typeof setTimeout> | null = null;
@@ -181,11 +195,31 @@ export class BarPresence {
   /** Change the local look and re-broadcast it so everyone re-renders this avatar. */
   setFit(fit: Fit) {
     this.fit = fit;
-    if (this.subscribed) void this.channel?.track(this.myMeta());
+    this.lookV++;
+    // instant for the room; presence catches up within the rate budget
+    if (this.pumpTimer) this.sendLook();
+    this.retrack();
   }
+
+  /** A phone back from the lock screen often holds a socket that died silently;
+   *  phoenix only notices on its next 25s heartbeat. Probe now: an unanswered
+   *  heartbeat at the second probe forces a reconnect (which re-tracks us). */
+  private onVisibility = () => {
+    if (document.visibilityState === "hidden") {
+      this.hiddenAt = Date.now();
+      return;
+    }
+    if (!this.hiddenAt || Date.now() - this.hiddenAt < 3000) return;
+    this.hiddenAt = 0;
+    const rt = getBrowserClient().realtime;
+    if (!rt.isConnected()) return rt.connect();
+    void rt.sendHeartbeat();
+    setTimeout(() => void rt.sendHeartbeat(), 2500);
+  };
 
   start(opts?: { lurk?: boolean }) {
     this.lurking = !!opts?.lurk;
+    document.addEventListener("visibilitychange", this.onVisibility);
     const sb = getBrowserClient();
     const ch = sb.channel(this.opts.channel ?? "hallucinate-bar", {
       config: { presence: { key: this.id }, broadcast: { self: false } },
@@ -216,8 +250,11 @@ export class BarPresence {
       .on("broadcast", { event: "intent" }, ({ payload }) =>
         this.onIntent(payload as Intent)
       )
+      .on("broadcast", { event: "look" }, ({ payload }) => this.applyLook(payload as TrackMeta))
       .on("broadcast", { event: "room-req" }, () => {
         if (this.isHost() && this.room) this.broadcastRoom();
+        // a newcomer: show them my current look now, not my last presence meta
+        if (this.pumpTimer) this.sendLook();
       })
       // GOD-MODE admin events. These originate ONLY from the server action (which
       // verified the owner cookie); a normal client has no way to emit a trusted
@@ -226,11 +263,25 @@ export class BarPresence {
         this.onAdmin(payload as Record<string, unknown>)
       )
       .subscribe((status) => {
+        if (status === "CLOSED" && this.channel === ch) {
+          // the server shut the channel (e.g. a rate limit) — rebuild it rather
+          // than leave this listener deaf until a reload
+          setTimeout(() => {
+            if (this.channel === ch) this.restart();
+          }, 2000);
+          return;
+        }
         if (status !== "SUBSCRIBED") return;
         this.subscribed = true;
         // learn the room state immediately, even while only lurking
         this.requestRoom();
-        if (!this.lurking) this.join();
+        if (this.lurking) return;
+        // a socket reconnect (phone locked / app switch / network blip) re-runs this
+        // with the server's presence for us gone — re-track, or we stay invisible
+        if (this.pumpTimer) {
+          this.trackTimes = []; // a rejoin is a fresh server-side channel
+          this.retrack();
+        } else this.join();
       });
   }
 
@@ -239,7 +290,7 @@ export class BarPresence {
   private join() {
     const ch = this.channel;
     if (!ch || this.pumpTimer) return;
-    void ch.track(this.myMeta());
+    this.retrack();
     this.pumpTimer = setInterval(() => this.pump(), 110);
     // host heartbeat: re-broadcast so late joiners + clock drift stay corrected
     this.roomTimer = setInterval(() => {
@@ -263,7 +314,19 @@ export class BarPresence {
     // not subscribed yet → the subscribe callback joins, since lurking is false
   }
 
+  /** Tear down and rejoin with the same identity + look. */
+  private restart() {
+    const lurk = this.lurking;
+    this.stop();
+    this.start({ lurk });
+  }
+
   stop() {
+    document.removeEventListener("visibilitychange", this.onVisibility);
+    if (this.trackTimer) clearTimeout(this.trackTimer);
+    this.trackTimer = null;
+    this.trackTimes = [];
+    this.subscribed = false;
     if (this.pumpTimer) clearInterval(this.pumpTimer);
     if (this.roomTimer) clearInterval(this.roomTimer);
     if (this.cooldownAdvanceTimer) clearTimeout(this.cooldownAdvanceTimer);
@@ -274,7 +337,9 @@ export class BarPresence {
     this.cooldownAdvanceTimer = null;
     if (this.channel) {
       void this.channel.untrack();
-      void this.channel.unsubscribe();
+      // remove, not just unsubscribe: sb.channel() hands back an existing
+      // channel of the same name, so a dead one would be reused on restart
+      void getBrowserClient().removeChannel(this.channel);
       this.channel = null;
     }
     this.remotes.length = 0;
@@ -733,7 +798,8 @@ export class BarPresence {
   setRoom(roomId: string) {
     if (this.venueRoom === roomId) return;
     this.venueRoom = roomId;
-    void this.channel?.track(this.myMeta());
+    this.lookV++;
+    this.retrack(); // "move" broadcasts carry the room meanwhile
   }
 
   /* ----------------------------------------------------------- internals */
@@ -746,7 +812,48 @@ export class BarPresence {
       hat: this.fit.hat,
       gear: gearCode(this.fit),
       vroom: this.venueRoom,
+      v: this.lookV,
     };
+  }
+
+  private sendLook() {
+    void this.channel?.send({ type: "broadcast", event: "look", payload: this.myMeta() });
+  }
+
+  /** Re-send our presence meta within Supabase's per-client budget. Over budget,
+   *  one trailing send goes out when the window frees up, carrying the latest look. */
+  private retrack() {
+    const ch = this.channel;
+    if (!ch || !this.subscribed || this.lurking || this.trackTimer) return;
+    const now = Date.now();
+    this.trackTimes = this.trackTimes.filter((t) => now - t < TRACK_WINDOW_MS);
+    if (this.trackTimes.length < TRACK_BUDGET) {
+      this.trackTimes.push(now);
+      void ch.track(this.myMeta());
+      return;
+    }
+    this.trackTimer = setTimeout(() => {
+      this.trackTimer = null;
+      this.retrack();
+    }, this.trackTimes[0] + TRACK_WINDOW_MS - now + 50);
+  }
+
+  /** Adopt a listener's look + room unless we already hold a newer version. */
+  private applyLook(m: TrackMeta) {
+    const pid = m.id;
+    if (pid === this.id) return;
+    const v = m.v ?? 0;
+    if (v < (this.lookVById.get(pid) ?? 0)) return;
+    this.lookVById.set(pid, v);
+    this.meta.set(pid, m);
+    const r = this.byId.get(pid);
+    if (!r) return;
+    r.color = m.color;
+    r.hair = m.hair;
+    if (m.skin) r.skin = m.skin;
+    if (m.hat) r.hat = m.hat;
+    if (m.gear) r.gear = m.gear;
+    if (m.vroom) r.room = m.vroom;
   }
 
   private nextKey() {
@@ -798,21 +905,9 @@ export class BarPresence {
       live.add(pid);
       present.push(pid);
       if (pid === this.id) continue;
-      if (m) this.meta.set(pid, m);
-      const r = this.byId.get(pid);
-      if (r) {
-        if (m) {
-          r.color = m.color;
-          r.hair = m.hair;
-          if (m.skin) r.skin = m.skin;
-          if (m.hat) r.hat = m.hat;
-          if (m.gear) r.gear = m.gear;
-          if (m.vroom) r.room = m.vroom; // keep avatar's room in sync via presence
-        }
-      } else {
-        // spawn newcomers at the door until their first move tells us where
-        this.ensure(pid, 570, 630, m);
-      }
+      // spawn newcomers at the door until their first move tells us where
+      if (!this.byId.has(pid)) this.ensure(pid, 570, 630);
+      if (m) this.applyLook(m);
     }
     this.presentIds = present;
 

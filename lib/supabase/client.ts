@@ -15,7 +15,9 @@ export function getBrowserClient(): SupabaseClient {
     throw new Error("Supabase public env vars are not set in the client bundle");
   client = createClient(url, key, {
     auth: { persistSession: false },
-    realtime: { params: { eventsPerSecond: 20 } },
+    // worker: heartbeats from a Web Worker, so a hidden tab's throttled timers
+    // can't starve the socket into a server-side drop
+    realtime: { params: { eventsPerSecond: 20 }, worker: true },
   });
   return client;
 }
