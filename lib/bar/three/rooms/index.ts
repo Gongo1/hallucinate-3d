@@ -11,6 +11,7 @@ import { buildRooftop } from "./rooftop";
 import { buildTrattoria } from "./trattoria";
 import { buildArchive } from "./archive";
 import { buildLabyrinth } from "./labyrinth";
+import { buildChamber } from "./chamber";
 
 // scene id (RoomDef.scene) → the builder that makes its low-poly scenery.
 // Doors + crates are built by the world for every room (see shared.ts).
@@ -27,4 +28,5 @@ export const ROOM_BUILDERS: Record<string, RoomBuilder> = {
   trattoria: buildTrattoria,
   archive: buildArchive,
   labyrinth: buildLabyrinth,
+  chamber: buildChamber,
 };

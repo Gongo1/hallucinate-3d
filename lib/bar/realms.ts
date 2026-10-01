@@ -10,6 +10,7 @@
 // Facts about Sombra come from the KB (events, people); the rest is flavour.
 
 import type { Fit } from "./fits";
+import { CHAMBER } from "./layout";
 
 export interface Keeper {
   name: string;
@@ -303,9 +304,33 @@ export const REALMS: Record<string, Realm> = {
         "Sombra digs deep: not the hits, the B-side of the B-side. This room is where that habit lives.",
         "The catalogue says one stack is hollow. Left end, between the shelves. It hums like a Berlin kick drum.",
         "Try it. Then come back and tell me I'm wrong.",
+        "And if you hear water under the floor in the far corner, by the stairs to the maze? Don't tell anyone I told you.",
       ],
     },
     map: { x: 0.5, y: 0.9 },
+  },
+  chamber: {
+    id: "chamber",
+    name: "CHAMBER OF SECRETS",
+    kanji: "秘密",
+    tagline: "below the archive · candlelit",
+    lore: "A stone hall under the Archive: a carved face, a stage in its mouth, black water on both sides, and candles nobody lit.",
+    sombra: "Sombra means shadow. The best nights happen somewhere you had to go looking for.",
+    color: "#3a8a5a",
+    keeper: {
+      name: "Basilio",
+      title: "keeper of the chamber",
+      x: 880,
+      y: 620,
+      fit: fit("#cf9268", "#3f7d5a", "#15151a", "none", { top: "haori", neck: "chain" }),
+      lines: [
+        "You found the hatch. Most people walk right past it.",
+        "Sombra means shadow. Down here is where the shadow keeps its music.",
+        "That stage is for the DJs. Stand in the mouth and play to the room; the water carries the sound.",
+        "The candles? They were floating when I got here. I don't ask.",
+      ],
+    },
+    map: { x: 0.78, y: 0.92 },
   },
   labyrinth: {
     id: "labyrinth",
@@ -334,7 +359,7 @@ export const REALMS: Record<string, Realm> = {
 
 export const REALM_ORDER = [
   "kissa", "garden", "tearoom", "housemiam", "omakase", "berlin",
-  "warehouse", "playa", "rooftop", "mattarello", "archive", "labyrinth",
+  "warehouse", "playa", "rooftop", "mattarello", "archive", "labyrinth", "chamber",
 ];
 
 // SECRET PASSAGES — floor hatches that connect far-apart realms. Both ends work
@@ -368,6 +393,13 @@ export const SECRETS: Secret[] = [
     name: "The Oven Door",
     a: { room: "mattarello", x: 985, y: 330 },
     b: { room: "housemiam", x: 960, y: 650 },
+  },
+  {
+    // the Chamber's only way in: a hatch in the Archive's quiet top-right corner
+    id: "serpent-stair",
+    name: "The Serpent Stair",
+    a: { room: "archive", x: 1010, y: 230 },
+    b: { room: "chamber", x: CHAMBER.hatch.x, y: CHAMBER.hatch.y },
   },
 ];
 

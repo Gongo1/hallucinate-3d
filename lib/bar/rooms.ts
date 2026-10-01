@@ -36,7 +36,8 @@ export interface RoomDef {
     | "warehouse"
     | "rooftop"
     | "labyrinth"
-    | "archive";
+    | "archive"
+    | "chamber";
   /** shelf slugs (DB) whose `room` matches this id render here; resolved at runtime */
   doors: RoomDoor[];
   /** where the player stands when they ARRIVE in this room (per incoming door) */
@@ -506,6 +507,18 @@ const ARCHIVE: RoomDef = {
   defaultSpawn: { x: ROOM_W / 2, y: 600 },
 };
 
+// The Chamber of Secrets — a stone hall under the Archive with a stage in the
+// mouth of a carved face. No doors on purpose: the only way in or out is the
+// hatch (SECRETS in realms.ts), so you arrive at the front by that hatch.
+const CHAMBER: RoomDef = {
+  id: "chamber",
+  name: "秘密 · CHAMBER OF SECRETS",
+  scene: "chamber",
+  doors: [],
+  spawns: {},
+  defaultSpawn: { x: ROOM_W / 2, y: 640 },
+};
+
 export const ROOMS: Record<string, RoomDef> = {
   kissa: KISSA,
   garden: GARDEN,
@@ -519,6 +532,7 @@ export const ROOMS: Record<string, RoomDef> = {
   rooftop: ROOFTOP,
   labyrinth: LABYRINTH,
   archive: ARCHIVE,
+  chamber: CHAMBER,
 };
 
 export const HUB_ROOM = "kissa";
