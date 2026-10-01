@@ -9,6 +9,7 @@
 
 import type { Fit, Hat, Top, Neck, Eyes, Back } from "./fits";
 import { getProgress, markGift } from "./progress";
+import { QUESTS, QUEST_BY_ID } from "./quests";
 
 export type GiftSlot = "hat" | "top" | "neck" | "eyes" | "back";
 
@@ -77,9 +78,9 @@ export const GIFTS: Gift[] = [
 
 export const GIFT_BY_ID: Record<string, Gift> = Object.fromEntries(GIFTS.map((g) => [g.id, g]));
 
-/** each keeper's gift the first time you talk to them (realm id → gift id) */
+/** each keeper's gift the first time you talk to them (realm id → gift id).
+ *  Rio has none: the Sombra tee is the first mission's reward (quests.ts). */
 export const KEEPER_GIFT: Record<string, string> = {
-  kissa: "sombra-tee", // Rio's welcome: you're one of us now
   garden: "bathe-token",
   tearoom: "mala",
   housemiam: "cosmic-star",
@@ -97,7 +98,7 @@ export const KEEPER_GIFT: Record<string, string> = {
 export const INGEST_GIFT = "usb";
 
 // reserved gifts only come from their moment, never the random draw
-const RESERVED = new Set([...Object.values(KEEPER_GIFT), INGEST_GIFT]);
+const RESERVED = new Set([...Object.values(KEEPER_GIFT), INGEST_GIFT, ...QUESTS.map((q) => q.reward)]);
 
 export type GiftTrigger =
   | { kind: "talk"; room: string }
@@ -105,7 +106,8 @@ export type GiftTrigger =
   | { kind: "ingest" }
   | { kind: "secret" }
   | { kind: "badge" }
-  | { kind: "visit" };
+  | { kind: "visit" }
+  | { kind: "quest"; id: string };
 
 /** chance a trigger turns up a random gift (talk/ingest have their own rules) */
 const CHANCE: Record<GiftTrigger["kind"], number> = {
@@ -115,6 +117,7 @@ const CHANCE: Record<GiftTrigger["kind"], number> = {
   secret: 1,
   badge: 1,
   visit: 0.3,
+  quest: 0,
 };
 
 const owned = (id: string) => !!getProgress().gifts[id];
@@ -135,14 +138,17 @@ function draw(preferWear: boolean): Gift | null {
 
 /**
  * Something happened — maybe hand over a gift. Returns the gift you just got
- * (already saved), or null. Keepers always gift the first time you talk; your
- * first 新着 paste earns the USB; secrets + badges always gift; keeps and
- * first visits gift by chance.
+ * (already saved), or null. A mission pays its reward on hand-in; keepers
+ * always gift the first time you talk; your first 新着 paste earns the USB;
+ * secrets + badges always gift; keeps and first visits gift by chance.
  */
 export function rollGift(t: GiftTrigger): Gift | null {
   let g: Gift | null = null;
   if (t.kind === "talk") {
     const id = KEEPER_GIFT[t.room];
+    if (id && !owned(id)) g = GIFT_BY_ID[id];
+  } else if (t.kind === "quest") {
+    const id = QUEST_BY_ID[t.id]?.reward;
     if (id && !owned(id)) g = GIFT_BY_ID[id];
   } else if (t.kind === "ingest" && !owned(INGEST_GIFT)) {
     g = GIFT_BY_ID[INGEST_GIFT];

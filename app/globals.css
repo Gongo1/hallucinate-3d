@@ -4087,3 +4087,289 @@ select,
   flex-direction: column;
   align-items: stretch;
 }
+
+/* ---- missions: the tracker, the deck + swap pickers, settings + the profile ---- */
+#questTracker {
+  position: fixed;
+  left: 16px;
+  top: calc(70px + env(safe-area-inset-top));
+  z-index: 39; /* under the overlays: a crate or the deck covers it */
+  max-width: min(320px, calc(100vw - 32px));
+  padding: 10px 14px 10px 12px;
+  background: rgba(22, 15, 9, 0.9);
+  border: 1px solid rgba(255, 179, 94, 0.45);
+  border-left: 3px solid var(--lantern);
+  border-radius: 10px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+  color: var(--cream);
+  pointer-events: none;
+  animation: rise 0.35s ease;
+}
+#questTracker .qtKicker {
+  font-size: 10px;
+  letter-spacing: 0.2em;
+  color: var(--lantern);
+  text-transform: uppercase;
+}
+#questTracker .qtStep {
+  margin-top: 4px;
+  font-size: 13px;
+  line-height: 1.4;
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+#questTracker .qtDot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--lantern);
+  box-shadow: 0 0 8px var(--lantern);
+  animation: qtPulse 1.6s ease-in-out infinite;
+}
+@keyframes qtPulse {
+  50% {
+    opacity: 0.35;
+  }
+}
+#questTracker .qtPips {
+  display: flex;
+  gap: 4px;
+  margin-top: 8px;
+}
+#questTracker .qtPips i {
+  height: 3px;
+  flex: 1;
+  border-radius: 2px;
+  background: rgba(241, 230, 210, 0.18);
+}
+#questTracker .qtPips i.done {
+  background: var(--moss);
+}
+#questTracker .qtPips i.on {
+  background: var(--lantern);
+}
+.touch #questTracker {
+  top: calc(62px + env(safe-area-inset-top));
+  left: 10px;
+  padding: 8px 12px 8px 10px;
+}
+.touch #questTracker .qtStep {
+  font-size: 12px;
+}
+#questTracker {
+  transition: opacity 0.2s;
+}
+.touch #questTracker.yield {
+  opacity: 0;
+}
+
+.pickBox {
+  position: relative;
+  width: min(460px, calc(100vw - 32px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  display: grid;
+  gap: 12px;
+  padding: 22px 20px 18px;
+  background: rgba(26, 18, 11, 0.97);
+  border: 1px solid rgba(255, 179, 94, 0.4);
+  border-radius: 16px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  color: var(--cream);
+}
+.pickBox .lcX {
+  justify-self: end;
+  margin: -8px -4px -4px 0;
+  background: none;
+  border: 0;
+  color: var(--cream);
+  opacity: 0.55;
+  font-family: "DM Mono", monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+.pickBox .lcKicker {
+  font-size: 10.5px;
+  letter-spacing: 0.24em;
+  color: var(--lantern);
+}
+.pickBox .lcTitle {
+  font-family: "Shippori Mincho", serif;
+  font-weight: 800;
+  font-size: 24px;
+  color: var(--shoji);
+}
+.pickBox .lcBody {
+  font-size: 14px;
+  line-height: 1.55;
+  opacity: 0.85;
+}
+.pickBox .lcBody b {
+  color: var(--lantern);
+  font-weight: 600;
+}
+.pickBox .lcFine {
+  font-size: 10.5px;
+  line-height: 1.5;
+  opacity: 0.55;
+}
+.pickBox .lcErr {
+  font-size: 13px;
+  color: #ff9a86;
+}
+.pickList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+  max-height: 44vh;
+  overflow-y: auto;
+}
+.pickRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(241, 230, 210, 0.12);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.03);
+}
+.pickSwatch {
+  flex: 0 0 auto;
+  width: 10px;
+  height: 30px;
+  border-radius: 3px;
+}
+.pickMeta {
+  flex: 1;
+  min-width: 0;
+  display: grid;
+}
+.pickTitle,
+.pickArtist {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pickTitle {
+  font-size: 13px;
+  color: var(--shoji);
+}
+.pickArtist {
+  font-size: 11px;
+  opacity: 0.6;
+}
+.pickRow .gBtn {
+  flex: 0 0 auto;
+}
+.pickEmpty {
+  font-size: 13px;
+  line-height: 1.5;
+  padding: 14px;
+  border: 1px dashed rgba(241, 230, 210, 0.25);
+  border-radius: 10px;
+  opacity: 0.8;
+}
+
+.pfCard {
+  display: grid;
+  gap: 10px;
+}
+.pfTabs {
+  display: flex;
+  gap: 6px;
+}
+.pfTabs button {
+  flex: 1;
+  font-family: "DM Mono", monospace;
+  font-size: 11.5px;
+  padding: 7px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(241, 230, 210, 0.22);
+  background: transparent;
+  color: var(--cream);
+  cursor: pointer;
+}
+.pfTabs button.on {
+  border-color: var(--lantern);
+  color: var(--lantern);
+  background: rgba(255, 179, 94, 0.1);
+}
+.pfInput {
+  font-size: 16px; /* 16px: no iOS zoom-on-focus */
+  font-family: "DM Mono", monospace;
+  background: #0f0a06;
+  color: var(--cream);
+  border: 1px solid rgba(241, 230, 210, 0.25);
+  border-radius: 999px;
+  padding: 10px 14px;
+  min-width: 0;
+}
+.pfInput:focus-visible {
+  outline: 2px solid var(--lantern);
+  outline-offset: 1px;
+}
+.pfActs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.pfWho {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.pfAt {
+  font-family: "Shippori Mincho", serif;
+  font-weight: 800;
+  font-size: 20px;
+  color: var(--shoji);
+}
+.pfOk {
+  font-size: 11px;
+  color: var(--moss);
+}
+.pfCard > .gBtn {
+  justify-self: start;
+}
+
+#settings .stSec {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(241, 230, 210, 0.12);
+}
+#settings .stHead {
+  font-size: 10.5px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+#settings .stRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+#settings .stHint {
+  font-size: 11px;
+  opacity: 0.55;
+}
+
+.gBtn.nudge {
+  border-color: var(--lantern);
+  color: var(--lantern);
+}
+.dexLetGo {
+  opacity: 0.45;
+}
+.dexLetGo:hover {
+  opacity: 1;
+  border-color: var(--vermilion) !important;
+  color: var(--vermilion) !important;
+}

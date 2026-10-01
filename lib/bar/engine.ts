@@ -109,6 +109,8 @@ export interface EngineCallbacks {
   onTalk?: (roomId: string) => void;
   /** stepped into a secret passage (`firstTime` = just discovered it) */
   onSecret?: (secretId: string, firstTime: boolean) => void;
+  /** tried a way out while the first mission still has the doors shut */
+  onLocked?: () => void;
 }
 
 interface EngineOpts {
@@ -300,6 +302,10 @@ export class BarEngine {
     this.view.setArrival(mult, ms);
   }
 
+  viewMode(): ViewMode {
+    return this.view.view;
+  }
+
   /** Camera: the close over-the-shoulder view (default) or the high overview.
    *  Remembered on this device. */
   toggleView(): ViewMode {
@@ -311,8 +317,29 @@ export class BarEngine {
     return next;
   }
 
+  // the first mission keeps every way out shut (doors, map travel, the dice, the
+  // cat) until it's handed in; the host flips this from the player's save
+  private doorsLocked = false;
+  private lockRattledAt = 0;
+  setDoorsLocked(locked: boolean) {
+    this.doorsLocked = locked;
+    this.lastPrompt = null; // door prompts change wording
+  }
+  /** a locked way out was tried — tell the host, at most every 1.5s (walking
+   *  into a door frame fires every frame) */
+  private rattleLock() {
+    const now = performance.now();
+    if (now - this.lockRattledAt < 1500) return;
+    this.lockRattledAt = now;
+    this.cb.onLocked?.();
+  }
+
   /** Fade-travel to a realm (the map's fast travel). Scenery only. */
   travelTo(roomId: string): boolean {
+    if (this.doorsLocked) {
+      this.rattleLock();
+      return false;
+    }
     if (!ROOMS[roomId] || roomId === this.room.id || this.transitioning()) return false;
     this.pendingRoom = { id: roomId, fromDoor: "travel" };
     this.fade = 0.0001;
@@ -899,6 +926,7 @@ export class BarEngine {
   /** Walk through a door: fade out, swap scenery at full dark, fade in. Audio is
    *  one shared stream and does NOT change. */
   private beginDoor(to: string) {
+    if (this.doorsLocked) return this.rattleLock();
     if (this.fade === 0 && !this.pendingRoom) {
       this.pendingRoom = { id: to, fromDoor: this.room.id };
       this.fade = 0.0001; // begin fade-out
@@ -1438,7 +1466,7 @@ export class BarEngine {
         s = best.shelf.data.ingest
           ? `Submit a record · <b>新着</b>`
           : `Dig through <b>${best.shelf.data.label}</b>`;
-      if (best.type === "deck") s = `<b>Sombra Radio</b> · live on the deck`;
+      if (best.type === "deck") s = `<b>The deck</b> · put a record on for the room`;
       if (best.type === "bar") s = `Talk to the <b>master</b> · who's leading this week`;
       if (best.type === "board") s = `Read <b>the board</b> · this week's diggers`;
       if (best.type === "dropbox") s = `Submit a record · <b>the drop box</b>`;
@@ -1451,6 +1479,7 @@ export class BarEngine {
         // beach") read as "Head …"; plain destinations as "Step through to …"
         const l = best.door.label;
         s = /^(back|down|up|to)\b/.test(l) ? `Head <b>${l}</b>` : `Step through to <b>${l}</b>`;
+        if (this.doorsLocked) s = `🔒 <b>Locked</b> · Rio has a job for you first`;
       }
       if (best.type === "keeper") {
         const k = REALMS[this.room.id]?.keeper;
@@ -1460,7 +1489,10 @@ export class BarEngine {
         s = this.secretsFound.has(best.id)
           ? `Take <b>${best.name}</b> to ${REALMS[best.to]?.name ?? best.to}`
           : `Something hums under the floor… <b>look closer</b>`;
-      if (best.type === "wander") s = `Rub the lucky cat — <b>wander somewhere random</b>`;
+      if (best.type === "wander")
+        s = this.doorsLocked
+          ? `The lucky cat is napping · <b>finish Rio's job first</b>`
+          : `Rub the lucky cat — <b>wander somewhere random</b>`;
       html = s + ` <span class="key">E</span>`;
     }
     if (html !== this.lastPrompt) {

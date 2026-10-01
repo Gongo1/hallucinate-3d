@@ -48,11 +48,34 @@ import {
   markDug,
   markSecret,
   markTalked,
+  emptyProgress,
+  keptCount,
+  mergeProgress,
   recordKey,
+  releaseDug,
+  replaceProgress,
   titleFor,
+  type Progress,
 } from "@/lib/bar/progress";
-import { AvatarPreview, TierChip, useProgress, type FlowUi } from "@/components/game/shared";
+import {
+  FIRST_RECORD,
+  QUEST_BY_ID,
+  advanceQuest,
+  completeQuest,
+  currentQuest,
+  doorsLocked,
+  grandfatherQuests,
+  questPhase,
+  rioLines,
+  slotCap,
+  slotsFree,
+  startQuest,
+} from "@/lib/bar/quests";
+import { AvatarPreview, TierChip, cueLabel, useProgress, type FlowUi } from "@/components/game/shared";
 import { Dialogue } from "@/components/game/Dialogue";
+import { DeckPanel, QuestTracker, SwapPanel, crateRows } from "@/components/game/Quest";
+import { ProfileCard, Settings } from "@/components/game/Settings";
+import { confirmProfile, myProfile, saveProfileProgress, type MyProfile } from "@/app/actions/profile";
 import { Dex, STASH } from "@/components/game/Dex";
 import { GiftCard, type GiftItem } from "@/components/game/GiftCard";
 import { WorldMap } from "@/components/game/WorldMap";
@@ -94,6 +117,14 @@ interface AddedRow {
 }
 
 /** "2 min ago" style relative time */
+/** keepers whose "!" is quiet: everyone you've met, except a keeper who has a
+ *  mission to hand you or is waiting for you to report back */
+function talkedFor(p: Progress): string[] {
+  const met = Object.keys(p.talked);
+  const ph = questPhase(FIRST_RECORD.id, p).phase;
+  return ph === "offer" || ph === "ready" ? met.filter((r) => r !== FIRST_RECORD.giver) : met;
+}
+
 function ago(ms: number): string {
   const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
   if (s < 60) return `${s}s ago`;
@@ -331,12 +362,34 @@ export default function Bar({
   const [giftQueue, setGiftQueue] = useState<GiftItem[]>([]);
   const [dexTab, setDexTab] = useState<string | undefined>(undefined);
   const [unseenGifts, setUnseenGifts] = useState(0);
+  // ----- missions (lib/bar/quests.ts): Rio's orientation gates the doors -----
+  const [dialogueLines, setDialogueLines] = useState<string[] | null>(null); // a keeper's mission talk
+  const [deckOpen, setDeckOpen] = useState(false); // the turntables: put one of yours on
+  const [swap, setSwap] = useState<{ track: Track; shelf: Shelf } | null>(null); // crate full
+  // ----- settings + the profile (a username + email that carries your save) -----
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [profile, setProfile] = useState<MyProfile | null>(null);
+  const [profileOffer, setProfileOffer] = useState(false); // once, after the first mission
+  const profileOfferDueRef = useRef(false);
+  const profileAskedRef = useRef(false); // the offer showed this visit (the list waits)
+  const [camView, setCamView] = useState<"close" | "overview">("close");
 
   // ----- refs read every frame by the engine (avoid per-frame re-render) -----
   const playingRef = useRef(false);
   const overlayOpenRef = useRef(false);
   const giftBlocked =
-    !started || doorPhase !== "gone" || crate !== null || ingestOpen || dialogue !== null || dexOpen || mapOpen || fitOpen;
+    !started ||
+    doorPhase !== "gone" ||
+    crate !== null ||
+    ingestOpen ||
+    dialogue !== null ||
+    dexOpen ||
+    mapOpen ||
+    fitOpen ||
+    deckOpen ||
+    swap !== null ||
+    settingsOpen ||
+    profileOffer;
   const giftShowing = !giftBlocked && giftQueue.length > 0 ? giftQueue[0] : null;
   const giftShowingRef = useRef(false);
   giftShowingRef.current = giftShowing !== null;
@@ -348,7 +401,20 @@ export default function Bar({
     if (giftKey) giftShownAtRef.current = performance.now();
   }, [giftKey]);
   overlayOpenRef.current =
-    crate !== null || ingestOpen || dialogue !== null || dexOpen || mapOpen || giftShowing !== null || boardOpen || masterOpen || submitOpen || radioOpen;
+    crate !== null ||
+    ingestOpen ||
+    dialogue !== null ||
+    dexOpen ||
+    mapOpen ||
+    giftShowing !== null ||
+    boardOpen ||
+    masterOpen ||
+    submitOpen ||
+    radioOpen ||
+    deckOpen ||
+    swap !== null ||
+    settingsOpen ||
+    profileOffer;
   const typingRef = useRef(false);
 
   // ----- dom + instance refs -----
@@ -459,7 +525,11 @@ export default function Bar({
           setBoardOpen(true);
           refreshBoardRef.current();
         },
-        onShowDeck: () => player.showDeck(),
+        onShowDeck: () => {
+          player.showDeck();
+          setDeckOpen(true);
+        },
+        onLocked: () => gameRef.current.toast("🔒 The doors are shut. Rio has a job for you first.", "plain", 3200),
         onTogglePlay: () => player.togglePlay(), // local mute toggle
         onNext: () => presenceRef.current?.skip(), // skip the whole room
         onCloseOverlays: () => {
@@ -483,6 +553,10 @@ export default function Bar({
           setMasterOpen(false);
           setSubmitOpen(false);
           setRadioOpen(false);
+          setDeckOpen(false);
+          setSwap(null);
+          setSettingsOpen(false);
+          setProfileOffer(false);
           setNav(null);
         },
         isOverlayOpen: () => overlayOpenRef.current,
@@ -529,10 +603,13 @@ export default function Bar({
     setFit(initialFit);
     engine.setPlayerFit(initialFit);
 
-    // your save: which secret hatches you've found + which keepers you've met
+    // your save: which secret hatches you've found + which keepers you've met.
+    // Saves from before missions count the orientation as done (never locked in).
+    grandfatherQuests();
     const saved = getProgress();
     engine.setSecretsFound(Object.keys(saved.secrets));
-    engine.setTalked(Object.keys(saved.talked));
+    engine.setTalked(talkedFor(saved));
+    engine.setDoorsLocked(doorsLocked(saved));
 
     // the door: regulars get the short ritual; the camera waits back behind the
     // door (no dolly when the viewer asked for reduced motion); the door opens
@@ -941,7 +1018,7 @@ export default function Bar({
   /** celebrate a newly reached digger title */
   const titleCheck = useCallback(
     (before: number) => {
-      const now = Object.keys(getProgress().dug).length;
+      const now = keptCount(getProgress());
       const a = titleFor(before);
       const b = titleFor(now);
       if (a !== b) toast(`🎖 You're a ${b} now — ${now} records dug`, "gold", 5200);
@@ -961,6 +1038,9 @@ export default function Bar({
     }
     if (!listPendingRef.current) return;
     listPendingRef.current = false;
+    // never mid-orientation, and never in the same visit as the profile offer
+    // (one ask at a time); it waits for a later crate
+    if (doorsLocked() || profileAskedRef.current) return;
     let asked = false;
     try {
       asked = localStorage.getItem(LIST_ASKED) === "1";
@@ -987,11 +1067,19 @@ export default function Bar({
     return () => clearTimeout(t);
   }, [started, onAir.live, memberNo, toast]);
 
-  /** keep a record in your dex (from a crate / a cue), with the celebrations */
+  /** keep a record in your dex (from a crate / a cue), with the celebrations.
+   *  A full crate keeps nothing (null); `swapIfFull` offers to let one go first. */
   const keep = useCallback(
-    (t: Track, shelf: Shelf) => {
-      const before = Object.keys(getProgress().dug).length;
+    (t: Track, shelf: Shelf, opts: { swapIfFull?: boolean } = {}) => {
+      const p = getProgress();
+      const before = keptCount(p);
+      if (!p.dug[recordKey(t)] && slotsFree(p) <= 0) {
+        if (opts.swapIfFull) setSwap({ track: t, shelf });
+        return null;
+      }
       const res = markDug(t, shelf, shelf.room ?? "kissa", shelvesRef.current);
+      if (res.isNew && advanceQuest(FIRST_RECORD.id, 0))
+        toast("✓ Saved. Now put it on the deck, down by the speakers.", "gold", 5200);
       // keeping a record from a crate IS the crate digging (no piles since
       // 2026-09-29): it scores as a dig on the weekly board
       if (res.isNew) void scoreAction("dig", recordKey(t)).catch(() => {});
@@ -1052,11 +1140,24 @@ export default function Bar({
     onTalk: (r) => {
       if (!REALMS[r]) return;
       setToasts((t) => t.filter((x) => x.tone !== "hint")); // they found Rio — hint done
+      // the orientation: Rio hands it out, checks in, and takes it back. The
+      // lines are fixed at open, since handing in flips the phase mid-talk.
+      let lines: string[] | null = null;
+      if (r === FIRST_RECORD.giver) {
+        const { phase, step } = questPhase(FIRST_RECORD.id);
+        if (phase === "offer") startQuest(FIRST_RECORD.id);
+        if (phase === "ready" && completeQuest(FIRST_RECORD.id)) {
+          giftRef.current({ kind: "quest", id: FIRST_RECORD.id }, REALMS[r].keeper.name);
+          profileOfferDueRef.current = true;
+        }
+        if (phase !== "done") lines = rioLines(phase, step, slotCap());
+      }
+      setDialogueLines(lines);
       setDialogue(r);
       markTalked(r);
       // the keeper's gift (first talk only) — handed over when the talk ends
       giftRef.current({ kind: "talk", room: r }, REALMS[r].keeper.name);
-      engineRef.current?.setTalked(Object.keys(getProgress().talked));
+      engineRef.current?.setTalked(talkedFor(getProgress()));
     },
     onSecret: (id, first) => {
       if (first) {
@@ -1103,7 +1204,8 @@ export default function Bar({
         dialogueAdvanceRef.current?.();
         return;
       }
-      const blocked = crate !== null || ingestOpen || dialogue !== null || fitOpen;
+      const blocked =
+        crate !== null || ingestOpen || dialogue !== null || fitOpen || deckOpen || swap !== null || settingsOpen || profileOffer;
       if (k === "m" && !blocked) {
         setDexOpen(false);
         setMapOpen((o) => !o);
@@ -1120,7 +1222,114 @@ export default function Bar({
       removeEventListener("keydown", onEsc, true);
       removeEventListener("keydown", onKey);
     };
-  }, [crate, ingestOpen, dialogue, fitOpen, dexOpen, mapOpen, wander]);
+  }, [crate, ingestOpen, dialogue, fitOpen, dexOpen, mapOpen, wander, deckOpen, swap, settingsOpen, profileOffer]);
+
+  // the mission gates the doors and Rio's "!" — keep the engine in step with the save
+  useEffect(() => {
+    engineRef.current?.setDoorsLocked(doorsLocked(progress));
+    engineRef.current?.setTalked(talkedFor(progress));
+  }, [progress]);
+
+  // the profile offer: once, after the first mission's talk and its gift are done
+  useEffect(() => {
+    if (!profileOfferDueRef.current || dialogue !== null || giftQueue.length > 0) return;
+    profileOfferDueRef.current = false;
+    if (profile?.verified) return;
+    profileAskedRef.current = true;
+    const t = setTimeout(() => setProfileOffer(true), 600);
+    return () => clearTimeout(t);
+  }, [dialogue, giftQueue.length, profile]);
+
+  // ----- the profile: who you are on this membership, and your save on it -----
+  useEffect(() => {
+    if (!memberNo) return;
+    void myProfile()
+      .then(setProfile)
+      .catch(() => {});
+  }, [memberNo]);
+
+  // a profile keeps a copy of your save: pushed a few seconds after it settles
+  useEffect(() => {
+    if (!profile) return;
+    const t = setTimeout(() => void saveProfileProgress(getProgress(), fitRef.current).catch(() => {}), 4000);
+    return () => clearTimeout(t);
+  }, [profile, progress, fit]);
+
+  // back from the email link: the token rides in the URL hash (never sent to a
+  // server log); hand it to the server, then fold the profile's save into this one
+  useEffect(() => {
+    const hash = new URLSearchParams(location.hash.slice(1));
+    const token = hash.get("access_token");
+    const failed = hash.get("error_description");
+    if (!token && !failed) return;
+    history.replaceState(null, "", location.pathname);
+    if (failed) {
+      setTimeout(() => gameRef.current.toast(`That link didn't work: ${failed}. Ask for a new one in ⚙ settings.`, "plain", 6400), 1500);
+      return;
+    }
+    void confirmProfile(token!)
+      .then((r) => {
+        if (!r.ok) {
+          gameRef.current.toast(r.message ?? "That link didn't work.", "plain", 5200);
+          return;
+        }
+        replaceProgress(mergeProgress(getProgress(), r.progress));
+        grandfatherQuests(); // a merged crate may hold more than your slots: keep it all
+        void myProfile().then(setProfile).catch(() => {});
+        const hello =
+          r.mode === "signin" ? `☉☽ Welcome back, @${r.username}. Your dig is here.` : `☉☽ Profile saved. You're @${r.username}.`;
+        setTimeout(() => gameRef.current.toast(hello, "gold", 5600), 1200);
+      })
+      .catch(() => {});
+  }, []);
+
+  /** signed out of this device: the save stays on the profile, this browser
+   *  starts fresh (a shared computer shouldn't keep someone else's dig) */
+  const openSettings = useCallback(() => {
+    setMapOpen(false);
+    setDexOpen(false);
+    setCamView(engineRef.current?.viewMode() ?? "close");
+    setSettingsOpen(true);
+  }, []);
+  const signedOut = useCallback(() => {
+    replaceProgress(emptyProgress());
+    location.reload();
+  }, []);
+
+  /** put one of your records on the deck: it cues for the room, and it's the
+   *  orientation's second step */
+  const placeOnDeck = useCallback(
+    (key: string) => {
+      const e = getProgress().dug[key];
+      if (!e) return;
+      // the catalog copy (it carries the duration + id the queue wants), else the save's
+      let track: Track = { title: e.title, artist: e.artist, ytId: e.ytId, scUrl: e.scUrl, id: e.id };
+      for (const s of shelvesRef.current) {
+        const hit = s.records.find((t) => recordKey(t) === key);
+        if (hit) {
+          track = hit;
+          break;
+        }
+      }
+      const p = presenceRef.current;
+      const cued = !!p && p.canCue();
+      if (cued) {
+        p!.cue(track);
+        refreshFlowUi();
+      }
+      setDeckOpen(false);
+      if (advanceQuest(FIRST_RECORD.id, 1)) {
+        // counted even when the queue is full: the newcomer did the thing
+        toast(
+          cued ? "▶ On the deck. Rio heard that. Go see Rio." : "The deck's queue is full, but Rio saw you try. Go see Rio.",
+          "gold",
+          5600
+        );
+      } else if (cued) toast(`▶ Up next for the whole room: ${track.title}`, "green", 3600);
+      else toast("The deck's queue is full right now. Try again in a bit.", "plain", 3600);
+    },
+    [toast, refreshFlowUi]
+  );
 
   // the arrival sign fades itself out
   useEffect(() => {
@@ -1170,8 +1379,8 @@ export default function Bar({
       const r = crate.shelf.records[idx];
       p.cue(r);
       gameRef.current.toast(`⤵ Up next for the whole room: ${r.title}`, "green", 3600);
-      // cueing a record keeps it in your dex
-      if (keep(r, crate.shelf).isNew) giftRef.current({ kind: "keep" });
+      // cueing a record keeps it in your dex (if there's a free slot)
+      if (keep(r, crate.shelf)?.isNew) giftRef.current({ kind: "keep" });
       refreshFlowUi();
       setCrate(null);
     },
@@ -1288,6 +1497,10 @@ export default function Bar({
     if (k === "world")
       return (
         <>
+          <button className="navAct" onClick={go(openSettings)}>
+            {profile?.verified ? `Profile & settings` : "Save your progress"}{" "}
+            <span>{profile?.verified ? `@${profile.username}` : "make a profile · ⚙"}</span>
+          </button>
           <button className="navAct" onClick={go(() => setFitOpen(true))}>
             Your fit <span>how you look to everyone</span>
           </button>
@@ -1451,13 +1664,40 @@ export default function Bar({
           onFlip={flip}
           onPick={(i) => setCrate((c) => (c ? { ...c, idx: i } : c))}
           onPlay={() => cueFromCrate(crate.idx)}
+          slots={`${Object.keys(progress.dug).length}/${slotCap(progress)}`}
+          paused={swap !== null}
           onKeep={(t) => {
-            const res = keep(t, crate.shelf);
-            if (res.isNew) {
-              toast(`✦ Saved to your crate · ${Object.keys(getProgress().dug).length} records`, "green", 3200);
+            const res = keep(t, crate.shelf, { swapIfFull: true });
+            if (res?.isNew) {
+              toast(`✦ Saved to your crate · ${Object.keys(getProgress().dug).length}/${slotCap()} slots`, "green", 3200);
               giftRef.current({ kind: "keep" });
             }
+            return !!res;
           }}
+        />
+      )}
+      {swap && (
+        <SwapPanel
+          rows={crateRows(progress.dug)}
+          incoming={swap.track}
+          cap={slotCap(progress)}
+          onClose={() => setSwap(null)}
+          onRelease={(key) => {
+            const gone = progress.dug[key];
+            releaseDug(key);
+            const res = keep(swap.track, swap.shelf);
+            setSwap(null);
+            if (res?.isNew) toast(`✦ Let go of ${gone?.title ?? "one"} · kept ${swap.track.title}`, "green", 3600);
+          }}
+        />
+      )}
+      {deckOpen && (
+        <DeckPanel
+          rows={crateRows(progress.dug)}
+          nowPlaying={np.track ? `${np.track.artist ? `${np.track.artist} — ` : ""}${np.track.title}` : null}
+          status={soloMode ? "Just you in here: it plays right away." : cueLabel(flowUi, false, "Your cues")}
+          onPlace={placeOnDeck}
+          onClose={() => setDeckOpen(false)}
         />
       )}
 
@@ -1474,11 +1714,52 @@ export default function Bar({
             setMapOpen(true);
           }}
           onWander={wander}
+          lines={dialogueLines}
+          locked={doorsLocked(progress)}
           gift={(() => {
-            const held = giftQueue.find((q) => q.gift.id === KEEPER_GIFT[dialogue]);
+            // what this keeper is holding: their first-talk gift, or a mission's reward
+            const ids = [KEEPER_GIFT[dialogue], ...Object.values(QUEST_BY_ID).filter((q) => q.giver === dialogue).map((q) => q.reward)];
+            const held = giftQueue.find((q) => ids.includes(q.gift.id));
             return held ? held.gift : null;
           })()}
         />
+      )}
+      {started && doorPhase === "gone" && !welcome && (() => {
+        const q = currentQuest(progress);
+        return q ? <QuestTracker quest={q.quest} phase={q.phase} step={q.step} yieldToPrompt={!!prompt} /> : null;
+      })()}
+      {settingsOpen && (
+        <Settings
+          profile={profile}
+          memberLabel={memberNo ? memberTag(memberNo) : null}
+          slots={{ used: Object.keys(progress.dug).length, cap: slotCap(progress) }}
+          view={camView}
+          muted={!np.playing}
+          onToggleView={() => {
+            const v = engineRef.current?.toggleView();
+            if (v) setCamView(v);
+          }}
+          onToggleMute={onMute}
+          onClose={() => setSettingsOpen(false)}
+          onSignedOut={signedOut}
+          onPending={setProfile}
+        />
+      )}
+      {profileOffer && (
+        <div className="overlay open" onPointerDown={(e) => e.target === e.currentTarget && setProfileOffer(false)}>
+          <div className="pickBox" role="dialog" aria-label="Save your progress">
+            <div className="lcKicker">☉☽ SAVE YOUR DIG</div>
+            <div className="lcTitle">Keep what you find</div>
+            <ProfileCard
+              profile={profile}
+              memberLabel={memberNo ? memberTag(memberNo) : null}
+              offer
+              onSkip={() => setProfileOffer(false)}
+              onSignedOut={signedOut}
+              onPending={setProfile}
+            />
+          </div>
+        </div>
       )}
       {giftShowing && (
         <GiftCard
@@ -1517,6 +1798,7 @@ export default function Bar({
           }}
           startTab={dexTab}
           onSeeStash={() => setUnseenGifts(0)}
+          onRelease={(key) => releaseDug(key)}
         />
       )}
       {mapOpen && (
@@ -1531,6 +1813,9 @@ export default function Bar({
             setMapOpen(false);
             setDexOpen(true);
           }}
+          onSettings={openSettings}
+          profiled={!!profile?.verified}
+          locked={doorsLocked(progress)}
         />
       )}
 
@@ -1605,8 +1890,17 @@ export default function Bar({
       {welcome && doorPhase === "gone" && (
         <div id="welcome" role="status">
           <p>
-            <b>You&apos;re in Sombra Radio.</b> Everyone here hears the same record. Listen, dig, or bring something
-            to the counter.
+            {doorsLocked(progress) ? (
+              <>
+                <b>You&apos;re in Sombra Radio.</b> Everyone here hears the same record. Rio, the record scout, has your
+                first job. Look for the <b>!</b>
+              </>
+            ) : (
+              <>
+                <b>You&apos;re in Sombra Radio.</b> Everyone here hears the same record. Listen, dig, or bring something
+                to the counter.
+              </>
+            )}
             {memberNo && <span className="wNum">You&apos;re member {memberTag(memberNo)}.</span>}
           </p>
           <button
@@ -2427,6 +2721,8 @@ function Crate({
   onPick,
   onPlay,
   onKeep,
+  slots,
+  paused,
 }: {
   crate: CrateState;
   flow: FlowUi;
@@ -2436,7 +2732,12 @@ function Crate({
   onFlip: (d: number) => void;
   onPick: (idx: number) => void;
   onPlay: () => void;
-  onKeep: (t: Track) => void;
+  /** false = not kept (the crate is full; the host offers a swap) */
+  onKeep: (t: Track) => boolean;
+  /** "3/10" — your crate's slots */
+  slots: string;
+  /** another panel sits on top (the swap): the keyboard is theirs */
+  paused: boolean;
 }) {
   // The back of the record: the whole tracklist at once (Side A / Side B),
   // play counts, ↑/↓ to move, ↵ to cue, K to keep. The selected record
@@ -2457,15 +2758,15 @@ function Crate({
   const atCap = !flow.canCue;
   const keepIt = () => {
     if (kept) return;
-    onKeep(rec);
-    setCaught(recordKey(rec));
+    if (onKeep(rec)) setCaught(recordKey(rec));
   };
   // keyboard: the list owns the arrows while the crate is open
-  const keysRef = useRef({ onFlip, onPlay, keepIt, atCap });
-  keysRef.current = { onFlip, onPlay, keepIt, atCap };
+  const keysRef = useRef({ onFlip, onPlay, keepIt, atCap, paused });
+  keysRef.current = { onFlip, onPlay, keepIt, atCap, paused };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const k = keysRef.current;
+      if (k.paused) return;
       if (e.key === "ArrowDown" || e.key === "ArrowRight") k.onFlip(1);
       else if (e.key === "ArrowUp" || e.key === "ArrowLeft") k.onFlip(-1);
       else if (e.key === "Enter") {
@@ -2542,7 +2843,7 @@ function Crate({
               onClick={keepIt}
               title="save it to your crate (just you, no cue)"
             >
-              {kept ? "✓ in my crate" : "✦ Save to my crate"}
+              {kept ? "✓ in my crate" : `✦ Save to my crate · ${slots}`}
             </button>
           </aside>
           <ol className="rbList" ref={listRef} role="listbox" aria-label={`${shelf.label} tracklist`}>

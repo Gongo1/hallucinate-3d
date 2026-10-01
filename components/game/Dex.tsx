@@ -12,12 +12,14 @@ import {
   recordKey,
   realmRecords,
   titleFor,
+  keptCount,
   TITLES,
   type DugEntry,
   type Progress,
 } from "@/lib/bar/progress";
 import type { Shelf, Track } from "@/lib/bar/types";
 import { GIFTS } from "@/lib/bar/gifts";
+import { slotCap } from "@/lib/bar/quests";
 import { TierChip, cueLabel, recordLink, type FlowUi } from "./shared";
 
 /** the special tab id for your gift stash */
@@ -34,6 +36,7 @@ export function Dex({
   onMap,
   startTab,
   onSeeStash,
+  onRelease,
 }: {
   progress: Progress;
   shelves: Shelf[];
@@ -47,6 +50,8 @@ export function Dex({
   startTab?: string;
   /** the stash was looked at (clears the HUD's new-gift dot) */
   onSeeStash?: () => void;
+  /** let a record go from your crate (frees a slot) */
+  onRelease: (key: string) => void;
 }) {
   const [sel, setSelRaw] = useState(startTab ?? (REALMS[room] ? room : "kissa"));
   const setSel = (id: string) => {
@@ -56,8 +61,10 @@ export function Dex({
   const giftCount = GIFTS.filter((g) => progress.gifts?.[g.id]).length;
   const dugCount = Object.keys(progress.dug).length;
   const total = shelves.reduce((n, s) => n + (s.ingest ? 0 : s.records.length), 0);
-  const title = titleFor(dugCount);
-  const nextTitle = TITLES.find((t) => t.at > dugCount);
+  // titles count every record you've ever kept, so letting one go never demotes you
+  const everKept = keptCount(progress);
+  const title = titleFor(everKept);
+  const nextTitle = TITLES.find((t) => t.at > everKept);
   const stamped = REALM_ORDER.filter((r) => progress.visited[r]).length;
   const secrets = SECRETS.filter((s) => progress.secrets[s.id]).length;
   const badges = REALM_ORDER.filter((r) => progress.badges[r]).length;
@@ -109,14 +116,15 @@ export function Dex({
                 {nextTitle && (
                   <span className="dexNext">
                     {" "}
-                    · {nextTitle.at - dugCount} more to {nextTitle.name}
+                    · {nextTitle.at - everKept} more to {nextTitle.name}
                   </span>
                 )}
               </div>
             </div>
           </div>
           <div className="dexStats">
-            <Stat n={`${dugCount}`} of={`/${total}`} label="records dug" />
+            <Stat n={`${dugCount}`} of={`/${slotCap(progress)}`} label="crate slots" />
+            <Stat n={`${total}`} of="" label="in the crates" />
             <Stat n={`${stamped}`} of={`/${REALM_ORDER.length}`} label="realms stamped" />
             <Stat n={`${secrets}`} of={`/${SECRETS.length}`} label="secrets" />
             <Stat n={`${badges}`} of="" label="badges" />
@@ -221,6 +229,13 @@ export function Dex({
                       ↗
                     </a>
                   )}
+                  <button
+                    className="dexCue dexLetGo"
+                    onClick={() => confirm(`Let go of “${track.title}”? It frees a slot in your crate.`) && onRelease(key)}
+                    title="let it go (frees a slot)"
+                  >
+                    ✕
+                  </button>
                 </div>
               );
             })}

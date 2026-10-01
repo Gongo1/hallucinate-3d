@@ -79,15 +79,42 @@ export interface Progress {
   visited: Record<string, number>;
   seen: Record<string, 1>;
   dug: Record<string, DugEntry>;
+  /** every record you've ever kept, even ones since let go from your crate:
+   *  titles + realm badges count this, so freeing a slot never costs you */
+  kept: Record<string, 1>;
   secrets: Record<string, number>;
   talked: Record<string, number>;
   badges: Record<string, number>;
   /** gifts you've been given (lib/bar/gifts.ts) → when */
   gifts: Record<string, number>;
+  /** missions (lib/bar/quests.ts) → how far along */
+  quests: Record<string, QuestState>;
+  /** crate slots a pre-slots save keeps (it already held this many records) */
+  slotFloor: number;
+}
+
+export interface QuestState {
+  /** the step you're on (steps.length = ready to hand in) */
+  step: number;
+  at: number;
+  /** when it was handed in */
+  done?: number;
 }
 
 const KEY = "hallucinate-progress-v1";
-const empty = (): Progress => ({ visited: {}, seen: {}, dug: {}, secrets: {}, talked: {}, badges: {}, gifts: {} });
+export const emptyProgress = (): Progress => ({
+  visited: {},
+  seen: {},
+  dug: {},
+  kept: {},
+  secrets: {},
+  talked: {},
+  badges: {},
+  gifts: {},
+  quests: {},
+  slotFloor: 0,
+});
+const empty = emptyProgress;
 
 let state: Progress = empty();
 let loaded = false;
@@ -99,6 +126,8 @@ function load() {
   try {
     const raw = localStorage.getItem(KEY);
     if (raw) state = { ...empty(), ...JSON.parse(raw) };
+    // saves from before `kept` existed: everything in the crate was kept
+    for (const k of Object.keys(state.dug)) if (!state.kept[k]) state.kept = { ...state.kept, [k]: 1 };
   } catch {
     state = empty();
   }
@@ -165,10 +194,11 @@ export function markDug(
   let badge: string | null = null;
   if (!prev) {
     state.dug = { ...state.dug, [key]: entry };
+    state.kept = { ...state.kept, [key]: 1 };
     state.seen = { ...state.seen, [key]: 1 };
-    // realm badge: dig BADGE_AT records (or all of them, if it's a small realm)
+    // realm badge: keep BADGE_AT records (or all of them, if it's a small realm)
     const r = realmStats(room, shelves);
-    if (!state.badges[room] && r.dug >= Math.min(BADGE_AT, r.total) && r.total > 0) {
+    if (!state.badges[room] && r.kept >= Math.min(BADGE_AT, r.total) && r.total > 0) {
       state.badges = { ...state.badges, [room]: Date.now() };
       badge = room;
     }
@@ -193,6 +223,70 @@ export function markGift(id: string): boolean {
   save();
   return true;
 }
+/** Let a record go from your crate (frees a slot). Badges already earned stay. */
+export function releaseDug(key: string): boolean {
+  load();
+  if (!state.dug[key]) return false;
+  const dug = { ...state.dug };
+  delete dug[key];
+  state.dug = dug;
+  save();
+  return true;
+}
+
+/** Write a mission's state (lib/bar/quests.ts owns the rules). */
+export function setQuest(id: string, q: QuestState) {
+  load();
+  state.quests = { ...state.quests, [id]: q };
+  save();
+}
+export function setSlotFloor(n: number) {
+  load();
+  if (n <= state.slotFloor) return;
+  state.slotFloor = n;
+  save();
+}
+
+/**
+ * Two saves of the same player (this device + the profile's copy) folded into
+ * one: everything found on either is kept, earliest timestamp wins, and a
+ * mission keeps whichever side got further.
+ */
+export function mergeProgress(a: Progress, raw: unknown): Progress {
+  if (!raw || typeof raw !== "object") return a;
+  const b = { ...emptyProgress(), ...(raw as Partial<Progress>) };
+  const firstOf = <T extends number>(x: Record<string, T>, y: Record<string, T>) => {
+    const out = { ...y, ...x };
+    for (const k of Object.keys(y)) if (x[k] !== undefined) out[k] = Math.min(x[k], y[k]) as T;
+    return out;
+  };
+  const quests = { ...b.quests, ...a.quests };
+  for (const k of Object.keys(b.quests)) {
+    const x = a.quests[k];
+    const y = b.quests[k];
+    if (x && y) quests[k] = y.done && !x.done ? y : x.done && !y.done ? x : y.step > x.step ? y : x;
+  }
+  return {
+    visited: firstOf(a.visited, b.visited),
+    seen: { ...b.seen, ...a.seen },
+    dug: { ...b.dug, ...a.dug },
+    kept: { ...b.kept, ...a.kept, ...Object.fromEntries(Object.keys({ ...a.dug, ...b.dug }).map((k) => [k, 1 as const])) },
+    secrets: firstOf(a.secrets, b.secrets),
+    talked: firstOf(a.talked, b.talked),
+    badges: firstOf(a.badges, b.badges),
+    gifts: firstOf(a.gifts, b.gifts),
+    quests,
+    slotFloor: Math.max(a.slotFloor ?? 0, b.slotFloor ?? 0),
+  };
+}
+
+/** Swap in a whole save (a profile restored from the server, already merged). */
+export function replaceProgress(p: Progress) {
+  load();
+  state = { ...empty(), ...p };
+  save();
+}
+
 export function markTalked(room: string) {
   load();
   if (state.talked[room]) return;
@@ -212,17 +306,24 @@ export function realmRecords(room: string, shelves: Shelf[]): { track: Track; sh
   return out;
 }
 
-export function realmStats(room: string, shelves: Shelf[]): { total: number; dug: number; seen: number } {
+export function realmStats(room: string, shelves: Shelf[]): { total: number; dug: number; kept: number; seen: number } {
   load();
   const recs = realmRecords(room, shelves);
   let dug = 0;
+  let kept = 0;
   let seen = 0;
   for (const { track } of recs) {
     const k = recordKey(track);
     if (state.dug[k]) dug++;
+    if (state.kept[k]) kept++;
     if (state.seen[k]) seen++;
   }
-  return { total: recs.length, dug, seen };
+  return { total: recs.length, dug, kept, seen };
+}
+
+/** how many records you've ever kept (titles count this, not your crate) */
+export function keptCount(p: Progress = state): number {
+  return Object.keys(p.kept ?? {}).length;
 }
 
 export function totals(shelves: Shelf[]) {
@@ -237,7 +338,7 @@ export function totals(shelves: Shelf[]) {
     realmsTotal: Object.keys(REALMS).length,
     secrets: Object.keys(state.secrets).length,
     badges: Object.keys(state.badges).length,
-    title: titleFor(dug),
+    title: titleFor(keptCount()),
   };
 }
 

@@ -4,7 +4,7 @@
 // record links, the record sleeve, and the live 3D fit portrait.
 
 import { useEffect, useRef, useSyncExternalStore } from "react";
-import { getProgress, subscribeProgress, TIERS, type Progress, type Tier } from "@/lib/bar/progress";
+import { emptyProgress, getProgress, subscribeProgress, TIERS, type Progress, type Tier } from "@/lib/bar/progress";
 import { drawFit } from "@/lib/bar/three/preview";
 import { shade } from "@/lib/bar/color";
 import type { Fit } from "@/lib/bar/fits";
@@ -20,7 +20,7 @@ export interface FlowUi {
   cueWaitLeft: number;
 }
 
-const EMPTY: Progress = { visited: {}, seen: {}, dug: {}, secrets: {}, talked: {}, badges: {}, gifts: {} };
+const EMPTY: Progress = emptyProgress();
 
 /** Your dig (progress.ts), re-rendering on every change. Empty during SSR. */
 export function useProgress(): Progress {
