@@ -58,3 +58,7 @@ git init && git add -A && git commit -m "hallucinate: prototype + plan"
 
 You have the Vercel and Supabase MCPs connected — `PROMPT.md` tells Claude Code
 to use them to provision the DB and deploy.
+
+## Contributors
+
+- Blaine (GitHub: BlaineMcCullars): quests and passports
