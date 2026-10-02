@@ -960,17 +960,17 @@ select,
 /* the room's interface waits behind the door, then follows it in: now playing,
    then the top bar, then the controls. `from` only + backwards fill, so each
    piece eases up to its OWN resting opacity (the hint rests at 0.4). */
-#wrap.chrome-hidden :is(#np, #topbar, #prompt, #lobby, #chatToggle, #stick, #actBtn, #danceBtnTouch) {
+#wrap.chrome-hidden :is(#np, #topbar, #prompt, #lobby, #chatToggle, #stick, #actBtn, #danceBtnTouch, #jumpBtnTouch) {
   opacity: 0;
   pointer-events: none;
 }
-#wrap.chrome-in :is(#np, #topbar, #prompt, #lobby, #chatToggle, #stick, #actBtn, #danceBtnTouch) {
+#wrap.chrome-in :is(#np, #topbar, #prompt, #lobby, #chatToggle, #stick, #actBtn, #danceBtnTouch, #jumpBtnTouch) {
   animation: chromeIn 0.3s cubic-bezier(0.22, 0.61, 0.36, 1) backwards;
 }
 #wrap.chrome-in #topbar {
   animation-delay: 150ms;
 }
-#wrap.chrome-in :is(#prompt, #lobby, #chatToggle, #stick, #actBtn, #danceBtnTouch) {
+#wrap.chrome-in :is(#prompt, #lobby, #chatToggle, #stick, #actBtn, #danceBtnTouch, #jumpBtnTouch) {
   animation-delay: 300ms;
 }
 @keyframes chromeIn {
@@ -3070,6 +3070,30 @@ select,
   border-radius: 50%;
   background: var(--panel);
   border: 1px solid rgba(255, 179, 94, 0.55);
+  font-size: 22px;
+  line-height: 1;
+  z-index: 35;
+  cursor: pointer;
+  touch-action: manipulation;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* jump sits above 💃, beside 💬: the four round buttons make a 2×2 by the thumb */
+#jumpBtnTouch {
+  display: none;
+}
+.touch #jumpBtnTouch {
+  display: grid;
+  place-items: center;
+  position: fixed;
+  right: calc(104px + env(safe-area-inset-right));
+  bottom: calc(184px + env(safe-area-inset-bottom));
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--panel);
+  border: 1px solid rgba(255, 179, 94, 0.55);
+  color: var(--cream);
   font-size: 22px;
   line-height: 1;
   z-index: 35;

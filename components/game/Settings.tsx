@@ -216,7 +216,7 @@ export function Settings({
           <div className="stRow">
             <span>Sound (just you)</span>
             <button type="button" className="gBtn small ghost" onClick={onToggleMute}>
-              {muted ? "muted · Space" : "on · Space"}
+              {muted ? "muted · U" : "on · U"}
             </button>
           </div>
         </section>

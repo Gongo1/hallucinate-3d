@@ -8,7 +8,7 @@ import {
   DIG_SPOTS, KISSA_FEATURED, KISSA_BOARD, KISSA_DROPBOX, type DigSpot,
 } from "./layout";
 import { World3D, type Actor, type ViewMode } from "./three/world";
-import { DANCE_MOVES, DANCE_SECONDS, type DanceMove } from "./three/character";
+import { DANCE_MOVES, DANCE_SECONDS, JUMP_SECONDS, type DanceMove } from "./three/character";
 import type { ActiveRef, BoardView, PickRef } from "./three/types";
 import { REALMS, WANDER_CAT, secretsIn } from "./realms";
 
@@ -30,6 +30,8 @@ interface Rect {
   w: number;
   h: number;
   _shelf?: boolean;
+  /** knee-high (crates, low tables, cushions, stones): a jump clears it */
+  low?: boolean;
 }
 interface ShelfObj {
   data: Shelf;
@@ -92,6 +94,8 @@ export interface EngineCallbacks {
   onOpenRadio?: () => void;
   onShowDeck: () => void;
   onTogglePlay: () => void;
+  /** the player jumped (Space): tell the room */
+  onJump?: () => void;
   onNext: () => void;
   onCloseOverlays: () => void;
   isOverlayOpen: () => boolean;
@@ -188,6 +192,7 @@ export class BarEngine {
   // the 💃 button: a one-shot move (walking cancels it)
   private danceMove: { move: DanceMove; at: number } | null = null;
   private lastMove: DanceMove | null = null;
+  private jumpAt: number | null = null; // performance.now() of take-off
   private stickVec = { x: 0, y: 0 };
   private stickId: number | null = null;
   private activeZone: Zone | null = null;
@@ -290,6 +295,17 @@ export class BarEngine {
     this.stopWalking();
     this.danceMove = { move, at: performance.now() };
     return move;
+  }
+
+  /** Hop! While airborne you pass over knee-high solids (`low`); tall ones
+   *  still stop you. Returns false mid-air or before you're in, so a held key
+   *  doesn't re-broadcast. */
+  jump(): boolean {
+    if (!this.started || this.transitioning()) return false;
+    const now = performance.now();
+    if (this.jumpAt !== null && now - this.jumpAt < JUMP_SECONDS * 1000) return false;
+    this.jumpAt = now;
+    return true;
   }
 
   /** This week's leaders for the whiteboard — view-only, passed to the 3D. */
@@ -442,6 +458,7 @@ export class BarEngine {
       const o: ShelfObj = { data, x: sp.x, y: sp.y, w: 100, h: 54, labelSide: sp.label };
       const r = this.solid(o.x - o.w / 2, o.y - o.h / 2, o.w, o.h);
       r._shelf = true;
+      r.low = true;
       this.shelfObjs.push(o);
       const zx = sp.label === "left" ? o.x - o.w / 2 - 30 : o.x + o.w / 2 + 30;
       this.zones.push({ type: "shelf", cx: zx, cy: o.y, r: 58, shelf: o });
@@ -465,6 +482,7 @@ export class BarEngine {
       const o: ShelfObj = { data, x: cx, y: cy, w: boxW, h: boxH, labelSide: "right" };
       const r = this.solid(o.x - o.w / 2, o.y - o.h / 2, o.w, o.h);
       r._shelf = true;
+      r.low = true;
       this.shelfObjs.push(o);
       this.zones.push({ type: "shelf", cx: o.x + o.w / 2 + 34, cy: o.y, r: 60, shelf: o });
     });
@@ -478,6 +496,7 @@ export class BarEngine {
       const o: ShelfObj = { data, x: rcx, y: cy, w: rW, h: rH, labelSide: "left" };
       const r = this.solid(o.x - o.w / 2, o.y - o.h / 2, o.w, o.h);
       r._shelf = true;
+      r.low = true;
       this.shelfObjs.push(o);
       this.zones.push({ type: "shelf", cx: o.x - o.w / 2 - 34, cy: o.y, r: 60, shelf: o });
     });
@@ -495,6 +514,7 @@ export class BarEngine {
       const o: ShelfObj = { data, x: sp.x, y: sp.y, w: bw, h: bh, labelSide: sp.label };
       const r = this.solid(o.x - o.w / 2, o.y - o.h / 2, o.w, o.h);
       r._shelf = true;
+      r.low = true;
       this.shelfObjs.push(o);
       const zx = sp.label === "left" ? o.x - o.w / 2 - 30 : o.x + o.w / 2 + 30;
       this.zones.push({ type: "shelf", cx: zx, cy: o.y, r: 58, shelf: o });
@@ -502,8 +522,8 @@ export class BarEngine {
   }
 
   /* ----------------------------------------------------------- world setup */
-  private solid(x: number, y: number, w: number, h: number): Rect {
-    const r: Rect = { x, y, w, h };
+  private solid(x: number, y: number, w: number, h: number, low = false): Rect {
+    const r: Rect = { x, y, w, h, low };
     this.solids.push(r);
     this.grid = null;
     return r;
@@ -570,7 +590,7 @@ export class BarEngine {
       });
     }
     if (this.room.id === WANDER_CAT.room) {
-      this.solid(WANDER_CAT.x - 16, WANDER_CAT.y - 12, 32, 26);
+      this.solid(WANDER_CAT.x - 16, WANDER_CAT.y - 12, 32, 26, true); // hop the cat
       this.zones.push({ type: "wander", cx: WANDER_CAT.zone.x, cy: WANDER_CAT.zone.y, r: 56 });
     }
   }
@@ -581,8 +601,9 @@ export class BarEngine {
       this.solid(s.x, s.y, KISSA.spkBox.w, KISSA.spkBox.h)
     );
     this.solid(KISSA.bar.x, KISSA.bar.y, KISSA.bar.w, KISSA.bar.h);
-    this.solid(KISSA.table.x, KISSA.table.y, KISSA.table.w, KISSA.table.h);
-    KISSA.decor.forEach((d) => this.solid(d.x - 18, d.y - 18, 36, 36));
+    this.solid(KISSA.table.x, KISSA.table.y, KISSA.table.w, KISSA.table.h, true);
+    // the zen stone is low enough to hop; bamboo + the maple are not
+    KISSA.decor.forEach((d) => this.solid(d.x - 18, d.y - 18, 36, 36, d.t === "stone"));
     // non-shelf zones — the deck is along the bottom wall, so its prompt zone sits
     // ABOVE it (you approach the booth walking down from the room centre).
     this.zones.push({
@@ -622,9 +643,10 @@ export class BarEngine {
   private buildGardenFixtures() {
     // Solid garden features (you can't walk through them). Koi pond, raked-gravel
     // patch, maple trunk, lanterns, tsukubai basin. Cushions/benches are passable.
-    this.solid(GARDEN.koi.x - GARDEN.koi.r, GARDEN.koi.y - GARDEN.koi.r * 0.7, GARDEN.koi.r * 2, GARDEN.koi.r * 1.4);
+    // the pond is wide: only a sprinting jump clears it
+    this.solid(GARDEN.koi.x - GARDEN.koi.r, GARDEN.koi.y - GARDEN.koi.r * 0.7, GARDEN.koi.r * 2, GARDEN.koi.r * 1.4, true);
     this.solid(GARDEN.maple.x - 14, GARDEN.maple.y - 6, 28, 26); // maple trunk
-    this.solid(GARDEN.basin.x - 16, GARDEN.basin.y - 14, 32, 30); // tsukubai
+    this.solid(GARDEN.basin.x - 16, GARDEN.basin.y - 14, 32, 30, true); // tsukubai
     GARDEN.lanterns.forEach((l) => this.solid(l.x - 12, l.y - 10, 24, 30));
   }
 
@@ -641,8 +663,8 @@ export class BarEngine {
   }
 
   private buildTeaFixtures() {
-    this.solid(TEA.table.x, TEA.table.y, TEA.table.w, TEA.table.h); // chabudai
-    TEA.plants.forEach((p) => this.solid(p.x - 13, p.y - 12, 26, 28)); // potted plants
+    this.solid(TEA.table.x, TEA.table.y, TEA.table.w, TEA.table.h, true); // chabudai
+    TEA.plants.forEach((p) => this.solid(p.x - 13, p.y - 12, 26, 28, true)); // potted plants
   }
 
   private buildCuratorFixtures() {
@@ -669,7 +691,7 @@ export class BarEngine {
     PLAYA.palms.forEach((p) => this.solid(p.x - 12, p.y - 8, 24, 24)); // trunks
     PLAYA.torches.forEach((t) => this.solid(t.x - 8, t.y - 6, 16, 18));
     const f = PLAYA.fire;
-    this.solid(f.x - 26, f.y - 18, 52, 36); // fire pit ring
+    this.solid(f.x - 26, f.y - 18, 52, 36, true); // fire pit ring
   }
 
   private buildWarehouseFixtures() {
@@ -681,14 +703,14 @@ export class BarEngine {
   private buildRooftopFixtures() {
     // the parapet — the city is far below, not walkable
     this.solid(-40, ROOFTOP.railY - 9, ROOM.w + 80, 18);
-    ROOFTOP.planters.forEach((p) => this.solid(p.x - 24, p.y - 14, 48, 30));
+    ROOFTOP.planters.forEach((p) => this.solid(p.x - 24, p.y - 14, 48, 30, true));
     this.solid(ROOFTOP.cart.x - 26, ROOFTOP.cart.y - 14, 52, 30);
   }
 
   private buildTrattoriaFixtures() {
     this.solid(TRATTORIA.oven.x, TRATTORIA.oven.y, TRATTORIA.oven.w, TRATTORIA.oven.h); // the oven
     this.solid(TRATTORIA.table.x, TRATTORIA.table.y, TRATTORIA.table.w, TRATTORIA.table.h); // long table
-    TRATTORIA.flour.forEach((s) => this.solid(s.x - 16, s.y - 10, 32, 24));
+    TRATTORIA.flour.forEach((s) => this.solid(s.x - 16, s.y - 10, 32, 24, true)); // flour sacks
     // the framed piece on the easel — the honest attribution; E opens their site
     const e = TRATTORIA.easel;
     this.solid(e.x - 20, e.y - 12, 40, 30);
@@ -799,7 +821,8 @@ export class BarEngine {
       if (k === "v") this.toggleView();
       if (k === "escape") this.cb.onCloseOverlays();
       if (this.cb.isOverlayOpen()) return;
-      if (k === " ") this.cb.onTogglePlay();
+      if (k === " " && !e.repeat && this.jump()) this.cb.onJump?.();
+      if (k === "u") this.cb.onTogglePlay();
       if (k === "n") this.cb.onNext();
     };
     this.onKeyUp = (e) => {
@@ -1205,7 +1228,11 @@ export class BarEngine {
     const sprint = k["shift"] ? 1.5 : this.moveTarget ? 1.3 : 1;
     const spd =
       (Math.hypot(this.stickVec.x, this.stickVec.y) || 1) * this.player.speed * sprint;
-    this.moveEntity(this.player, ix * spd * dt, iy * spd * dt);
+    // in the air you sail over anything knee-high; tall things still stop you
+    // (and if you ever end up standing inside one, you can walk out of it)
+    const overLow = this.airborne() || this.solids.some((s) => s.low && this.circRect(this.player, s));
+    this.moveEntity(this.player, ix * spd * dt, iy * spd * dt, overLow);
+    if (!this.airborne()) this.landClear();
     if (ix) this.player.dir = ix > 0 ? 1 : -1;
     this.player.bob = moving ? this.player.bob + dt * 11 : 0;
 
@@ -1405,9 +1432,10 @@ export class BarEngine {
     return clamp(this.portalCharge / PORTAL_CHARGE_MS, 0, 1);
   }
 
-  private moveEntity(e: { x: number; y: number; r?: number }, dx: number, dy: number) {
+  private moveEntity(e: { x: number; y: number; r?: number }, dx: number, dy: number, overLow = false) {
     e.x += dx;
     for (const s of this.solids) {
+      if (overLow && s.low) continue;
       if (this.circRect(e, s)) {
         e.x -= dx;
         break;
@@ -1415,10 +1443,36 @@ export class BarEngine {
     }
     e.y += dy;
     for (const s of this.solids) {
+      if (overLow && s.low) continue;
       if (this.circRect(e, s)) {
         e.y -= dy;
         break;
       }
+    }
+  }
+
+  /** mid-jump: high enough to clear anything knee-high */
+  private airborne(): boolean {
+    return this.jumpAt !== null && performance.now() - this.jumpAt < JUMP_SECONDS * 1000;
+  }
+
+  /** Came down on top of something (a short jump, or stopped mid-air): step
+   *  off it to the nearest open side, so you're never stuck inside a crate. */
+  private landClear() {
+    const p = this.player;
+    const on = this.solids.find((s) => s.low && this.circRect(p, s));
+    if (!on) return;
+    const pad = p.r + 1;
+    const exits = [
+      { x: on.x - pad, y: p.y },
+      { x: on.x + on.w + pad, y: p.y },
+      { x: p.x, y: on.y - pad },
+      { x: p.x, y: on.y + on.h + pad },
+    ].sort((a, b) => Math.hypot(a.x - p.x, a.y - p.y) - Math.hypot(b.x - p.x, b.y - p.y));
+    const free = exits.find((e) => !this.solids.some((s) => this.circRect({ x: e.x, y: e.y, r: p.r }, s)));
+    if (free) {
+      p.x = free.x;
+      p.y = free.y;
     }
   }
 
@@ -1507,7 +1561,7 @@ export class BarEngine {
   private render(dt: number) {
     const moving = this.playerMoving;
     const actors: Actor[] = [
-      { id: "player", x: this.player.x, y: this.player.y, fit: this.playerFit, moving, player: true, dance: this.danceNow() },
+      { id: "player", x: this.player.x, y: this.player.y, fit: this.playerFit, moving, player: true, dance: this.danceNow(), jump: this.jumpNow() },
       ...this.npcs.map((n, i) => ({
         id: `npc:${this.room.id}:${i}`,
         x: n.x,
@@ -1562,6 +1616,15 @@ export class BarEngine {
     });
   }
 
+  /** Seconds since the local jump took off, while it's in the air. */
+  private jumpNow(): number | undefined {
+    if (this.jumpAt === null) return undefined;
+    const t = (performance.now() - this.jumpAt) / 1000;
+    if (t < JUMP_SECONDS) return t;
+    this.jumpAt = null;
+    return undefined;
+  }
+
   /** The local dance move in progress, if any (ends itself after two bars). */
   private danceNow(): { move: DanceMove; t: number } | undefined {
     if (!this.danceMove) return undefined;
@@ -1614,6 +1677,7 @@ export class BarEngine {
             r.dance && performance.now() - r.dance.at < DANCE_SECONDS * 1000
               ? { move: r.dance.move as DanceMove, t: (performance.now() - r.dance.at) / 1000 }
               : undefined,
+          jump: r.jumpAt && performance.now() - r.jumpAt < JUMP_SECONDS * 1000 ? (performance.now() - r.jumpAt) / 1000 : undefined,
         };
       });
   }

@@ -533,7 +533,8 @@ export default function Bar({
           setDeckOpen(true);
         },
         onLocked: () => gameRef.current.toast("🔒 The doors are shut. Rio has a job for you first.", "plain", 3200),
-        onTogglePlay: () => player.togglePlay(), // local mute toggle
+        onTogglePlay: () => player.togglePlay(), // local mute toggle (U)
+        onJump: () => presenceRef.current?.sendJump(), // Space: everyone sees the hop
         onNext: () => presenceRef.current?.skip(), // skip the whole room
         onCloseOverlays: () => {
           // E / tap while a keeper is talking turns the page (Esc still closes)
@@ -1410,6 +1411,10 @@ export default function Bar({
     presenceRef.current?.sendDance(move);
     gameRef.current.toast(`💃 ${DANCE_NAMES[move]}`);
   }, []);
+  // ⤒ — a hop (Space on a keyboard); everyone in the room sees it
+  const jump = useCallback(() => {
+    if (engineRef.current?.jump()) presenceRef.current?.sendJump();
+  }, []);
   const setTyping = useCallback((v: boolean) => {
     typingRef.current = v;
   }, []);
@@ -1566,7 +1571,7 @@ export default function Bar({
             Change the camera <span>close · overview · V</span>
           </button>
           <button className="navAct" onClick={go(onMute)}>
-            {np.playing ? "Mute me" : "Unmute me"} <span>just you · Space</span>
+            {np.playing ? "Mute me" : "Unmute me"} <span>just you · U</span>
           </button>
           <a className="navAct" id="sombraDoor" href="https://sombraproject.com">
             Sombra <span>sombraproject.com</span>
@@ -2024,6 +2029,11 @@ export default function Bar({
           💃
         </button>
       )}
+      {started && (
+        <button id="jumpBtnTouch" onClick={jump} aria-label="jump">
+          ⤒
+        </button>
+      )}
 
       {/* the door (id="intro"): its CLICK is the knock, the gesture that lets
           the in-gesture playStation make sound on phones */}
@@ -2079,7 +2089,8 @@ function HelpContent() {
         <span><kbd>C</kbd> my crate</span>
         <span><kbd>R</kbd> wander</span>
         <span><kbd>V</kbd> camera</span>
-        <span><kbd>Space</kbd> mute me</span>
+        <span><kbd>Space</kbd> jump</span>
+        <span><kbd>U</kbd> mute me</span>
         <span><kbd>N</kbd> skip (room vote)</span>
       </div>
       <div className="helpKeys touchOnly">
