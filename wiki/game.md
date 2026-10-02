@@ -50,6 +50,13 @@ The **💃 dance** button (reaction row on desktop, round button beside E on tou
 - **How it's built:** it's procedural, like every other animation, so there are no animation files. See `dancePose()` in `three/character.ts`.
 - **Everyone sees it:** the move is broadcast as a `dance` presence event.
 
+## ⤒ Jump
+**Space** jumps (mute moved to **U**). On touch it's the round ⤒ above 💃. A jump lasts `JUMP_SECONDS` (0.62s) and covers about 150 units walking, 220 sprinting.
+- **It clears things:** solids made with `solid(..., low = true)` (the `low` flag on `Rect` in `engine.ts`) don't block you while `airborne()`. Low = crates, the kissa low table, the zen stone, the cat, the koi pond (sprint to clear it), the tsukubai basin, the chabudai and potted plants, the fire pit, rooftop planters, and flour sacks. Walls, doors, counters, the deck and speakers, keepers, pillars, trees, lanterns and railings still block you mid-air.
+- **Landing:** come down on top of something low and `landClear()` steps you off to the nearest open side. If none is open, you can walk out of it.
+- **Click-to-walk** paths still route around low things. Jumping is a keyboard / button move.
+- **Everyone sees it:** broadcast as a `jump` presence event. Your feet leave the floor at once, so what others see matches what you can clear.
+
 ## Guardrails
 - Keep the placements valid:
   - Piles, keepers and hatches must sit on open floor, away from other zones, and be reachable by path from every spawn.

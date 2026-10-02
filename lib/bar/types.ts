@@ -61,6 +61,8 @@ export interface RemotePlayer {
   gear?: string;
   /** their latest 💃 move + when it arrived (performance.now ms) */
   dance?: { move: string; at: number };
+  /** when their latest jump arrived (performance.now ms) */
+  jumpAt?: number;
   /** which venue room this listener is currently in (for per-room avatar render) */
   room: string;
 }

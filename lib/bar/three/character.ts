@@ -38,6 +38,13 @@ export const DANCE_NAMES: Record<DanceMove, string> = {
 /** a move lasts two bars at ~120bpm */
 export const DANCE_SECONDS = 4;
 
+// JUMP — a hop on Space (or the touch ⤒). For the whole jump the engine lets
+// you pass over knee-high solids (crates, low tables, stones); walls, counters
+// and people still stop you. Feet leave the floor at once, so what you see
+// matches what you can clear.
+export const JUMP_SECONDS = 0.62;
+const JUMP_HEIGHT = 22; // a crate's height, with room to spare
+
 interface DancePose {
   lx: number; lz: number; ly: number; // left leg (forward/back, out/in, swivel)
   rx: number; rz: number; ry: number; // right leg
@@ -165,6 +172,8 @@ export interface CharState {
   waving?: boolean;
   /** a one-shot dance move in progress (t = seconds since it started) */
   dance?: { move: DanceMove; t: number };
+  /** a jump in progress: seconds since take-off */
+  jump?: number;
 }
 
 export class Character {
@@ -677,6 +686,24 @@ export class Character {
       this.body.rotation.y -= this.body.rotation.y * ease;
     }
 
+    // ---- a jump: spring up with knees tucked and arms thrown up, and back
+    // down. Layers over walking and dancing alike.
+    let air = 0; // 0 on the floor .. 1 at the top
+    const j = s.jump !== undefined && !s.sitting && s.jump >= 0 && s.jump < JUMP_SECONDS ? s.jump / JUMP_SECONDS : null;
+    if (j !== null) {
+      air = 4 * j * (1 - j);
+      this.body.position.y += air * JUMP_HEIGHT;
+      const tuck = Math.min(1, air * 1.6);
+      this.legL.rotation.x += (-0.55 - this.legL.rotation.x) * tuck;
+      this.legR.rotation.x += (-0.35 - this.legR.rotation.x) * tuck;
+      this.armL.rotation.x += (-2.5 - this.armL.rotation.x) * tuck;
+      this.armR.rotation.x += (-2.5 - this.armR.rotation.x) * tuck;
+      this.armL.rotation.z = -0.12 - 0.3 * tuck;
+      this.armR.rotation.z = 0.12 + 0.3 * tuck;
+    }
+    // the shadow stays on the floor: smaller and fainter the higher you go
+    this.shadow.scale.setScalar(1 - 0.35 * air);
+
     // ---- extras
     if (this.halo) {
       const pulse = 0.6 + 0.4 * Math.sin(t * 2);
@@ -684,7 +711,7 @@ export class Character {
       this.halo.rotation.z = t * 0.8;
     }
     const sh = this.shadow.material as THREE.MeshBasicMaterial;
-    sh.opacity = 0.42 - bounce * 0.04;
+    sh.opacity = (0.42 - bounce * 0.04) * (1 - 0.45 * air);
     if (this.ring) {
       (this.ring.material as THREE.MeshBasicMaterial).opacity = 0.4 + 0.2 * Math.sin(t * 3);
     }

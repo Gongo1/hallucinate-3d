@@ -240,6 +240,11 @@ export class BarPresence {
         const r = this.byId.get(p.id);
         if (r && typeof p.move === "string") r.dance = { move: p.move, at: performance.now() };
       })
+      .on("broadcast", { event: "jump" }, ({ payload }) => {
+        // someone jumped — their avatar hops here too (scenery only)
+        const r = this.byId.get((payload as { id: string }).id);
+        if (r) r.jumpAt = performance.now();
+      })
       .on("broadcast", { event: "react" }, ({ payload }) => {
         const p = payload as { color: string; emoji: string };
         this.opts.onReact({ key: this.nextKey(), color: p.color, emoji: p.emoji });
@@ -791,6 +796,11 @@ export class BarPresence {
   /** Tell the room your avatar is dancing (they play the same move). */
   sendDance(move: string) {
     void this.channel?.send({ type: "broadcast", event: "dance", payload: { id: this.id, move } });
+  }
+
+  /** Tell the room your avatar jumped (they see the hop). */
+  sendJump() {
+    void this.channel?.send({ type: "broadcast", event: "jump", payload: { id: this.id } });
   }
 
   /** The local listener moved to another venue room (scenery). Re-track presence

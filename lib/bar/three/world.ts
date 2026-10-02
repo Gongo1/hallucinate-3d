@@ -31,6 +31,8 @@ export interface Actor {
   pick?: PickRef;
   /** a dance move in progress (t = seconds since it started) */
   dance?: { move: DanceMove; t: number };
+  /** a jump in progress: seconds since take-off */
+  jump?: number;
 }
 
 export interface FrameState {
@@ -560,6 +562,7 @@ export class World3D {
         // keepers you haven't met wave you over
         waving: near && !s.game.talked,
         dance: a.dance,
+        jump: a.jump,
       };
       e.c.update(s.t, s.dt, st);
     }
