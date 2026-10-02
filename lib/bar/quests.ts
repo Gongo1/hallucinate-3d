@@ -4,7 +4,7 @@
 // newcomer learns the loop (dig → save → put it on → report back) before they
 // wander off. Pure client state, kept in your save (progress.ts).
 
-import { getProgress, setQuest, setSlotFloor, type Progress } from "./progress";
+import { getProgress, isPreMissionsSave, setQuest, setSlotFloor, type Progress } from "./progress";
 import { ROOMS, HUB_ROOM } from "./rooms";
 import { SECRETS } from "./realms";
 
@@ -87,15 +87,19 @@ export function currentQuest(p: Progress = getProgress()): { quest: Quest; phase
 /**
  * Saves from before missions existed already know the room (they've dug, been
  * through a door, or hold Rio's tee): count the orientation as done so nobody
- * gets locked in, and let them keep every record they already hold.
+ * gets locked in, and let them keep every record they already hold. Only a
+ * save written before missions counts: a newcomer who saves a record before
+ * finding Rio still gets the orientation. Runs once; the floor it sets is the
+ * only way past the slot cap besides missions (a merge never raises it).
  */
 export function grandfatherQuests() {
   const p = getProgress();
+  if (!isPreMissionsSave() || p.quests?.[FIRST_RECORD.id]) return;
   const dug = Object.keys(p.dug).length;
-  if (dug > slotsFor(p)) setSlotFloor(dug);
-  if (p.quests?.[FIRST_RECORD.id]) return;
   const veteran = dug > 0 || Object.keys(p.visited).some((r) => r !== HUB_ROOM) || !!p.gifts["sombra-tee"];
-  if (veteran) setQuest(FIRST_RECORD.id, { step: FIRST_RECORD.steps.length - 1, at: Date.now(), done: Date.now() });
+  if (!veteran) return;
+  setQuest(FIRST_RECORD.id, { step: FIRST_RECORD.steps.length - 1, at: Date.now(), done: Date.now() });
+  if (dug > slotsFor(getProgress())) setSlotFloor(dug);
 }
 
 /* ------------------------------------------------------------ crate slots */

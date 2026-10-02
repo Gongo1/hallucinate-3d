@@ -21,7 +21,9 @@ import { CURATED_CRATES } from "@/lib/bar/layout";
 import {
   loadFit,
   saveFit,
+  parseFit,
   randomFit,
+  sameFit,
   SKINS,
   OUTFITS,
   HAIRS,
@@ -54,6 +56,7 @@ import {
   recordKey,
   releaseDug,
   replaceProgress,
+  sameProgress,
   titleFor,
   type Progress,
 } from "@/lib/bar/progress";
@@ -1002,7 +1005,9 @@ export default function Bar({
 
   // change the local look: persist it, repaint the player avatar, and re-broadcast
   // so everyone else re-renders this listener with the new fit (live).
-  const applyFit = useCallback((f: Fit) => {
+  const fitDirtyRef = useRef(false); // changed on this device since the profile last got it
+  const applyFit = useCallback((f: Fit, fromProfile = false) => {
+    if (!fromProfile) fitDirtyRef.current = true;
     setFit(f);
     saveFit(f);
     engineRef.current?.setPlayerFit(f);
@@ -1070,10 +1075,12 @@ export default function Bar({
   /** keep a record in your dex (from a crate / a cue), with the celebrations.
    *  A full crate keeps nothing (null); `swapIfFull` offers to let one go first. */
   const keep = useCallback(
-    (t: Track, shelf: Shelf, opts: { swapIfFull?: boolean } = {}) => {
+    (t: Track, shelf: Shelf, opts: { swapIfFull?: boolean; swapped?: boolean } = {}) => {
       const p = getProgress();
       const before = keptCount(p);
-      if (!p.dug[recordKey(t)] && slotsFree(p) <= 0) {
+      // a swap is one out, one in: it never grows the crate, so it goes through
+      // even when a merged save holds more than the cap
+      if (!opts.swapped && !p.dug[recordKey(t)] && slotsFree(p) <= 0) {
         if (opts.swapIfFull) setSwap({ track: t, shelf });
         return null;
       }
@@ -1082,7 +1089,7 @@ export default function Bar({
         toast("✓ Saved. Now put it on the deck, down by the speakers.", "gold", 5200);
       // keeping a record from a crate IS the crate digging (no piles since
       // 2026-09-29): it scores as a dig on the weekly board
-      if (res.isNew) void scoreAction("dig", recordKey(t)).catch(() => {});
+      if (res.firstKeep) void scoreAction("dig", recordKey(t)).catch(() => {});
       if (res.badge) {
         void scoreAction("badge", res.badge).catch(() => {});
         toast(`🏅 Realm badge — ${REALMS[res.badge]?.name ?? res.badge}`, "gold", 5200);
@@ -1145,11 +1152,18 @@ export default function Bar({
       let lines: string[] | null = null;
       if (r === FIRST_RECORD.giver) {
         const { phase, step } = questPhase(FIRST_RECORD.id);
-        if (phase === "offer") startQuest(FIRST_RECORD.id);
+        if (phase === "offer") {
+          startQuest(FIRST_RECORD.id);
+          // saved one before finding Rio: that counts
+          if (Object.keys(getProgress().dug).length) advanceQuest(FIRST_RECORD.id, 0);
+        }
         if (phase === "ready" && completeQuest(FIRST_RECORD.id)) {
           giftRef.current({ kind: "quest", id: FIRST_RECORD.id }, REALMS[r].keeper.name);
           profileOfferDueRef.current = true;
         }
+        // grandfathered saves skip the mission, but Rio still has their tee
+        // (it used to be his first-talk gift; rollGift skips it if owned)
+        if (phase === "done") giftRef.current({ kind: "quest", id: FIRST_RECORD.id }, REALMS[r].keeper.name);
         if (phase !== "done") lines = rioLines(phase, step, slotCap());
       }
       setDialogueLines(lines);
@@ -1233,10 +1247,17 @@ export default function Bar({
   // the profile offer: once, after the first mission's talk and its gift are done
   useEffect(() => {
     if (!profileOfferDueRef.current || dialogue !== null || giftQueue.length > 0) return;
-    profileOfferDueRef.current = false;
-    if (profile?.verified) return;
+    if (profile?.verified) {
+      profileOfferDueRef.current = false;
+      return;
+    }
     profileAskedRef.current = true;
-    const t = setTimeout(() => setProfileOffer(true), 600);
+    // the due flag clears only once it shows: a re-run inside the delay (the
+    // profile loading, another gift) just reschedules it
+    const t = setTimeout(() => {
+      profileOfferDueRef.current = false;
+      setProfileOffer(true);
+    }, 600);
     return () => clearTimeout(t);
   }, [dialogue, giftQueue.length, profile]);
 
@@ -1248,12 +1269,39 @@ export default function Bar({
       .catch(() => {});
   }, [memberNo]);
 
-  // a profile keeps a copy of your save: pushed a few seconds after it settles
+  // a profile keeps a copy of your save: pushed a few seconds after it settles.
+  // The server merges it with the stored copy and hands the result back, so
+  // this device also picks up what another device found (and the look you
+  // picked there, unless you changed it here since).
+  const confirmingRef = useRef(false); // an email link is being checked: hold pushes
+  /** wear the profile's saved look, unless this device changed its own since */
+  const adoptProfileFit = useCallback(
+    (raw: unknown) => {
+      const f = parseFit(raw);
+      if (!f || fitDirtyRef.current) return;
+      const next = clampFit(f);
+      if (!fitRef.current || !sameFit(next, fitRef.current)) applyFit(next, true);
+    },
+    [applyFit]
+  );
   useEffect(() => {
     if (!profile) return;
-    const t = setTimeout(() => void saveProfileProgress(getProgress(), fitRef.current).catch(() => {}), 4000);
+    const t = setTimeout(() => {
+      if (confirmingRef.current) return;
+      const sentFit = fitRef.current;
+      const changed = fitDirtyRef.current;
+      void saveProfileProgress(getProgress(), sentFit, changed)
+        .then((r) => {
+          if (!r) return;
+          if (changed && fitRef.current === sentFit) fitDirtyRef.current = false;
+          const merged = mergeProgress(getProgress(), r.progress);
+          if (!sameProgress(merged, getProgress())) replaceProgress(merged);
+          adoptProfileFit(r.fit);
+        })
+        .catch(() => {});
+    }, 4000);
     return () => clearTimeout(t);
-  }, [profile, progress, fit]);
+  }, [profile, progress, fit, adoptProfileFit]);
 
   // back from the email link: the token rides in the URL hash (never sent to a
   // server log); hand it to the server, then fold the profile's save into this one
@@ -1267,21 +1315,31 @@ export default function Bar({
       setTimeout(() => gameRef.current.toast(`That link didn't work: ${failed}. Ask for a new one in ⚙ settings.`, "plain", 6400), 1500);
       return;
     }
+    confirmingRef.current = true;
     void confirmProfile(token!)
       .then((r) => {
         if (!r.ok) {
           gameRef.current.toast(r.message ?? "That link didn't work.", "plain", 5200);
           return;
         }
-        replaceProgress(mergeProgress(getProgress(), r.progress));
-        grandfatherQuests(); // a merged crate may hold more than your slots: keep it all
+        // this device's save folds in, unless it belongs to another profile
+        // (then it's that profile's, and this one starts from its own copy)
+        replaceProgress(mergeProgress(r.switched ? emptyProgress() : getProgress(), r.progress));
+        // a new device takes on the profile's look
+        if (r.mode === "signin") {
+          fitDirtyRef.current = false;
+          adoptProfileFit(r.fit);
+        }
         void myProfile().then(setProfile).catch(() => {});
         const hello =
           r.mode === "signin" ? `☉☽ Welcome back, @${r.username}. Your dig is here.` : `☉☽ Profile saved. You're @${r.username}.`;
         setTimeout(() => gameRef.current.toast(hello, "gold", 5600), 1200);
       })
-      .catch(() => {});
-  }, []);
+      .catch(() => {})
+      .finally(() => {
+        confirmingRef.current = false;
+      });
+  }, [adoptProfileFit]);
 
   /** signed out of this device: the save stays on the profile, this browser
    *  starts fresh (a shared computer shouldn't keep someone else's dig) */
@@ -1380,7 +1438,7 @@ export default function Bar({
       p.cue(r);
       gameRef.current.toast(`⤵ Up next for the whole room: ${r.title}`, "green", 3600);
       // cueing a record keeps it in your dex (if there's a free slot)
-      if (keep(r, crate.shelf)?.isNew) giftRef.current({ kind: "keep" });
+      if (keep(r, crate.shelf)?.firstKeep) giftRef.current({ kind: "keep" });
       refreshFlowUi();
       setCrate(null);
     },
@@ -1668,10 +1726,9 @@ export default function Bar({
           paused={swap !== null}
           onKeep={(t) => {
             const res = keep(t, crate.shelf, { swapIfFull: true });
-            if (res?.isNew) {
-              toast(`✦ Saved to your crate · ${Object.keys(getProgress().dug).length}/${slotCap()} slots`, "green", 3200);
-              giftRef.current({ kind: "keep" });
-            }
+            if (res?.isNew) toast(`✦ Saved to your crate · ${Object.keys(getProgress().dug).length}/${slotCap()} slots`, "green", 3200);
+            // only a first-ever keep rolls a gift: let go + keep again is no new find
+            if (res?.firstKeep) giftRef.current({ kind: "keep" });
             return !!res;
           }}
         />
@@ -1685,7 +1742,7 @@ export default function Bar({
           onRelease={(key) => {
             const gone = progress.dug[key];
             releaseDug(key);
-            const res = keep(swap.track, swap.shelf);
+            const res = keep(swap.track, swap.shelf, { swapped: true });
             setSwap(null);
             if (res?.isNew) toast(`✦ Let go of ${gone?.title ?? "one"} · kept ${swap.track.title}`, "green", 3600);
           }}

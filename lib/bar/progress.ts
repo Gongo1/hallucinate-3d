@@ -82,6 +82,9 @@ export interface Progress {
   /** every record you've ever kept, even ones since let go from your crate:
    *  titles + realm badges count this, so freeing a slot never costs you */
   kept: Record<string, 1>;
+  /** records let go of → when, so a merge with an older save (another device,
+   *  the profile's copy) doesn't put them back in the crate */
+  released: Record<string, number>;
   secrets: Record<string, number>;
   talked: Record<string, number>;
   badges: Record<string, number>;
@@ -107,6 +110,7 @@ export const emptyProgress = (): Progress => ({
   seen: {},
   dug: {},
   kept: {},
+  released: {},
   secrets: {},
   talked: {},
   badges: {},
@@ -118,6 +122,7 @@ const empty = emptyProgress;
 
 let state: Progress = empty();
 let loaded = false;
+let preMissions = false; // the stored save was written before missions existed
 const subs = new Set<() => void>();
 
 function load() {
@@ -125,7 +130,11 @@ function load() {
   loaded = true;
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) state = { ...empty(), ...JSON.parse(raw) };
+    if (raw) {
+      const saved = JSON.parse(raw);
+      preMissions = !("quests" in saved);
+      state = { ...empty(), ...saved };
+    }
     // saves from before `kept` existed: everything in the crate was kept
     for (const k of Object.keys(state.dug)) if (!state.kept[k]) state.kept = { ...state.kept, [k]: 1 };
   } catch {
@@ -174,12 +183,14 @@ export function markDug(
   shelf: Shelf,
   room: string,
   shelves: Shelf[]
-): { key: string; entry: DugEntry; isNew: boolean; badge: string | null } {
+): { key: string; entry: DugEntry; isNew: boolean; firstKeep: boolean; badge: string | null } {
   load();
   const key = recordKey(t);
   const prev = state.dug[key];
+  const firstKeep = !state.kept[key];
   const entry: DugEntry = prev ?? {
-    at: Date.now(),
+    // strictly after any release, so a merge sees the re-keep as the latest word
+    at: Math.max(Date.now(), (state.released[key] ?? 0) + 1),
     room,
     shelf: shelf.label,
     shelfId: shelf.id,
@@ -204,7 +215,9 @@ export function markDug(
     }
     save();
   }
-  return { key, entry, isNew: !prev, badge };
+  // isNew = it just went into the crate; firstKeep = never kept before (a
+  // record let go and kept again isn't a new find: no score, no gift roll)
+  return { key, entry, isNew: !prev, firstKeep, badge };
 }
 
 export function markSecret(id: string): { first: boolean } {
@@ -230,6 +243,7 @@ export function releaseDug(key: string): boolean {
   const dug = { ...state.dug };
   delete dug[key];
   state.dug = dug;
+  state.released = { ...state.released, [key]: Date.now() };
   save();
   return true;
 }
@@ -239,6 +253,11 @@ export function setQuest(id: string, q: QuestState) {
   load();
   state.quests = { ...state.quests, [id]: q };
   save();
+}
+/** true when this device's save predates missions (quests.ts grandfathers it) */
+export function isPreMissionsSave(): boolean {
+  load();
+  return preMissions;
 }
 export function setSlotFloor(n: number) {
   load();
@@ -250,7 +269,9 @@ export function setSlotFloor(n: number) {
 /**
  * Two saves of the same player (this device + the profile's copy) folded into
  * one: everything found on either is kept, earliest timestamp wins, and a
- * mission keeps whichever side got further.
+ * mission keeps whichever side got further. The crate is the exception: a
+ * record let go on either side stays gone unless it was kept again later.
+ * Pure (the server merges with it too).
  */
 export function mergeProgress(a: Progress, raw: unknown): Progress {
   if (!raw || typeof raw !== "object") return a;
@@ -266,11 +287,21 @@ export function mergeProgress(a: Progress, raw: unknown): Progress {
     const y = b.quests[k];
     if (x && y) quests[k] = y.done && !x.done ? y : x.done && !y.done ? x : y.step > x.step ? y : x;
   }
+  const released = { ...a.released, ...b.released };
+  for (const k of Object.keys(a.released ?? {})) if (b.released?.[k] !== undefined) released[k] = Math.max(a.released[k], b.released[k]);
+  const dug: Record<string, DugEntry> = {};
+  for (const k of new Set([...Object.keys(a.dug), ...Object.keys(b.dug)])) {
+    const x = a.dug[k];
+    const y = b.dug[k];
+    const e = !x ? y : !y ? x : y.at > x.at ? y : x;
+    if ((released[k] ?? 0) < e.at) dug[k] = e;
+  }
   return {
     visited: firstOf(a.visited, b.visited),
     seen: { ...b.seen, ...a.seen },
-    dug: { ...b.dug, ...a.dug },
+    dug,
     kept: { ...b.kept, ...a.kept, ...Object.fromEntries(Object.keys({ ...a.dug, ...b.dug }).map((k) => [k, 1 as const])) },
+    released,
     secrets: firstOf(a.secrets, b.secrets),
     talked: firstOf(a.talked, b.talked),
     badges: firstOf(a.badges, b.badges),
@@ -278,6 +309,19 @@ export function mergeProgress(a: Progress, raw: unknown): Progress {
     quests,
     slotFloor: Math.max(a.slotFloor ?? 0, b.slotFloor ?? 0),
   };
+}
+
+/** Same save, ignoring key order (Postgres jsonb reorders keys, so a raw
+ *  JSON compare would see every round trip as a change). */
+export function sameProgress(a: Progress, b: Progress): boolean {
+  return stableJson(a) === stableJson(b);
+}
+export function stableJson(v: unknown): string {
+  return JSON.stringify(v, (_k, x: unknown) =>
+    x && typeof x === "object" && !Array.isArray(x)
+      ? Object.fromEntries(Object.entries(x).sort(([p], [q]) => (p < q ? -1 : p > q ? 1 : 0)))
+      : x
+  );
 }
 
 /** Swap in a whole save (a profile restored from the server, already merged). */

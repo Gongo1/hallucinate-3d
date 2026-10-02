@@ -103,6 +103,25 @@ function valid(f: unknown): f is Fit {
   );
 }
 
+/** A fit from elsewhere (a profile's saved copy), or null if it isn't one. */
+export function parseFit(raw: unknown): Fit | null {
+  return valid(raw) ? raw : null;
+}
+
+/** Same look, ignoring key order and absent-vs-default gear. */
+export function sameFit(a: Fit, b: Fit): boolean {
+  return (
+    a.skin === b.skin &&
+    a.body === b.body &&
+    a.hair === b.hair &&
+    a.hat === b.hat &&
+    (a.top ?? "basic") === (b.top ?? "basic") &&
+    (a.neck ?? "none") === (b.neck ?? "none") &&
+    (a.eyes ?? "none") === (b.eyes ?? "none") &&
+    (a.back ?? "none") === (b.back ?? "none")
+  );
+}
+
 /** Read the saved fit, or null if none/invalid (caller falls back to default). */
 export function loadFit(): Fit | null {
   if (typeof localStorage === "undefined") return null;

@@ -1,9 +1,10 @@
 "use server";
 
 import { cookies, headers } from "next/headers";
-import { MEMBER_COOKIE, MEMBER_MAX_AGE, mintMemberCookie, readMemberCookie } from "@/lib/members/auth";
+import { EMAIL_RE, MEMBER_COOKIE, currentMemberId, setMemberCookie } from "@/lib/members/auth";
 import { adminClient, foldMember } from "@/lib/members/store";
 import { checkUsername } from "@/lib/members/username";
+import { emptyProgress, mergeProgress, type Progress } from "@/lib/bar/progress";
 
 // Profiles: a username + email on top of the anonymous membership, so a save
 // can follow a player to another device. The email is proven by a Supabase Auth
@@ -11,30 +12,17 @@ import { checkUsername } from "@/lib/members/username";
 // it to confirmProfile, and the server checks it with Auth). Like membership,
 // every action degrades quietly when the service key isn't configured.
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 const PENDING_TTL_MS = 24 * 3600_000; // an unverified username claim lapses after a day
 const RESEND_MS = 60_000; // one link email a minute per profile
 const MAX_SAVE_BYTES = 256 * 1024;
 
-async function currentMemberId(): Promise<string | null> {
-  return readMemberCookie((await cookies()).get(MEMBER_COOKIE)?.value);
-}
-
-async function setMemberCookie(id: string) {
-  const value = mintMemberCookie(id);
-  if (!value) return;
-  (await cookies()).set(MEMBER_COOKIE, value, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: MEMBER_MAX_AGE,
-  });
-}
-
-/** Where the email link lands: this site, from the request (the Auth project's
- *  redirect allow-list must include it, or Auth falls back to its Site URL). */
+/** Where the email link lands. Never taken from the request in production:
+ *  Host / X-Forwarded-Host are the caller's to set, and the link carries a
+ *  sign-in token. SITE_URL wins, else Vercel's production domain; only local
+ *  dev reads the request (the Auth redirect allow-list must include it). */
 async function siteOrigin(): Promise<string> {
+  if (process.env.SITE_URL) return process.env.SITE_URL.replace(/\/$/, "");
+  if (process.env.VERCEL_PROJECT_PRODUCTION_URL) return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}`;
   const h = await headers();
   const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
   const proto = h.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https");
@@ -131,6 +119,9 @@ export type Confirmed = {
   username?: string;
   /** "created" = this email was just verified; "signin" = a save came back */
   mode?: "created" | "signin";
+  /** this device was on a different verified profile: its local save is that
+   *  profile's, so the client must not fold it into this one */
+  switched?: boolean;
   progress?: unknown;
   fit?: unknown;
 };
@@ -151,15 +142,16 @@ export async function confirmProfile(accessToken: string): Promise<Confirmed> {
   let row = verified;
   let mode: "created" | "signin" = "signin";
   if (!row) {
-    // a pending profile for this email: this device's own first, else the newest
-    const { data: pending } = await sb
-      .from("hallu_profiles")
-      .select(cols)
-      .eq("email", mail)
-      .is("verified_at", null)
-      .order("updated_at", { ascending: false });
-    row = (pending ?? []).find((r) => r.member_id === me) ?? pending?.[0] ?? null;
-    if (!row) return { ok: false, message: "That link doesn't match a profile." };
+    // Only this device's own pending profile. Anyone can start a profile under
+    // any email, so verifying "a pending row for this email" would let a
+    // stranger's claim be verified (and this device moved onto it) by the real
+    // owner opening their own link.
+    const { data: pending } = me
+      ? await sb.from("hallu_profiles").select(cols).eq("member_id", me).eq("email", mail).is("verified_at", null).maybeSingle()
+      : { data: null };
+    row = pending;
+    if (!row)
+      return { ok: false, message: "Open the link on the device where you made the profile, or sign in from ⚙ settings." };
     await sb
       .from("hallu_profiles")
       .update({ auth_user: user.id, verified_at: new Date().toISOString(), updated_at: new Date().toISOString() })
@@ -168,25 +160,39 @@ export async function confirmProfile(accessToken: string): Promise<Confirmed> {
   }
 
   const target = row.member_id as string;
+  let switched = false;
   if (me && me !== target) {
     // fold a throwaway membership in, but never merge two real profiles
     const { data: mine } = await sb.from("hallu_profiles").select("verified_at").eq("member_id", me).maybeSingle();
-    if (!mine?.verified_at) await foldMember(me, target);
+    if (mine?.verified_at) switched = true;
+    else await foldMember(me, target);
   }
   if (me !== target) await setMemberCookie(target);
-  return { ok: true, mode, username: row.username as string, progress: row.progress, fit: row.fit };
+  return { ok: true, mode, switched, username: row.username as string, progress: row.progress, fit: row.fit };
 }
 
-/** Keep this device's save on its profile (pending or verified). */
-export async function saveProfileProgress(progress: unknown, fit: unknown): Promise<void> {
+export type ProfileSave = { progress: Progress; fit: unknown };
+
+/** Keep this device's save on its profile (pending or verified). The save is
+ *  merged with the stored copy, never written over it, so a device with an
+ *  older save can't erase what another device found; the merged copy comes
+ *  back for this device to adopt. The look is replaced only when this device
+ *  changed it (or none is stored yet): a device that just opened mustn't put
+ *  its old look over one picked elsewhere. */
+export async function saveProfileProgress(progress: unknown, fit: unknown, fitChanged: boolean): Promise<ProfileSave | null> {
   const sb = adminClient();
   const id = await currentMemberId();
-  if (!sb || !id || !progress || typeof progress !== "object") return;
-  if (JSON.stringify(progress).length + JSON.stringify(fit ?? null).length > MAX_SAVE_BYTES) return;
-  await sb
+  if (!sb || !id || !progress || typeof progress !== "object") return null;
+  const { data: row } = await sb.from("hallu_profiles").select("progress, fit").eq("member_id", id).maybeSingle();
+  if (!row) return null;
+  const merged = mergeProgress({ ...emptyProgress(), ...(progress as Partial<Progress>) }, row.progress);
+  const nextFit = fitChanged || row.fit == null ? fit ?? null : row.fit;
+  if (JSON.stringify(merged).length + JSON.stringify(nextFit ?? null).length > MAX_SAVE_BYTES) return null;
+  const { error } = await sb
     .from("hallu_profiles")
-    .update({ progress, fit: fit ?? null, updated_at: new Date().toISOString() })
+    .update({ progress: merged, fit: nextFit ?? null, updated_at: new Date().toISOString() })
     .eq("member_id", id);
+  return error ? null : { progress: merged, fit: nextFit ?? null };
 }
 
 /** Forget the profile on this device (a shared computer). The save stays on
