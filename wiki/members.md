@@ -43,3 +43,16 @@ Run the dev server with `SUPABASE_SERVICE_ROLE_KEY` in the process env (pulled t
 - **Review:** `/booth` "the drop box" list → THIS WEEK / SELECTION (runs `ingestLinks` with the booth cookie) or pass.
 - **Owner check:** `page.tsx` passes `owner` (booth cookie), and the owner keeps the direct add box.
 - Typing in any field no longer fires Bar's M / C / R hotkeys.
+
+## Profiles: username + verified email (Oct 1)
+Migration `supabase/migrations/20261001_profiles.sql` (`hallu_profiles`, RLS on, no policies). Actions are in `app/actions/profile.ts`. The UI is `components/game/Settings.tsx`: the ⚙ in the map header, "Save your progress" in the World menu, and the one-time offer after the first mission (skippable).
+- **A profile hangs off the member row** (`member_id` primary key), so a profile carries the member number, keys and points with it.
+- **Create:** `startProfile` claims the username (unique ignoring case; an unverified claim lapses after 24h) and calls Supabase Auth `signInWithOtp` with `emailRedirectTo = <this site>/?profile=confirm`. "This site" is `SITE_URL`, else Vercel's `VERCEL_PROJECT_PRODUCTION_URL`. It is never read from the request headers outside local dev, because the caller controls those and the link carries a sign-in token.
+- **Confirm:** the link comes back with `#access_token` in the hash (implicit flow). `Bar.tsx` hands it to `confirmProfile`, which checks it with `auth.getUser`. That verifies this device's own pending row (never another device's: anyone can start a profile under any email), or signs this device in by switching the member cookie and folding a throwaway membership in. The client then merges the saves (`mergeProgress`: a union, earliest timestamps, the furthest mission step, and records let go stay gone via `released`). If the device was on a different verified profile (`switched`), its local save is not merged in.
+- **Sign in on a new device:** `startSignIn` gives the same answer whether or not the email exists.
+- **Sync:** `saveProfileProgress` pushes `{progress, fit}` 4s after changes, for pending or verified rows, capped at 256KB. The server merges the push into the stored copy (never overwrites it) and returns the result, which the device adopts. The look is replaced only when this device changed it.
+- **Sign out of a device** clears the member cookie and the local save, then reloads.
+- **Rate limits:** one link email per profile per minute.
+- **Setup this needs (Supabase dashboard, shared Sombra project):**
+  - Add this site's URLs (prod + `http://localhost:3100`) to Auth → URL Configuration → Redirect URLs. Otherwise the link falls back to the project's Site URL.
+  - The built-in mailer only sends a few emails an hour, so set up custom SMTP before launch.

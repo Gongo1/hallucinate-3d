@@ -8,6 +8,7 @@ import { useMemo, useState } from "react";
 import { REALMS, REALM_ORDER, SECRETS } from "@/lib/bar/realms";
 import { ROOMS } from "@/lib/bar/rooms";
 import { realmStats, type Progress } from "@/lib/bar/progress";
+import { DEPTH } from "@/lib/bar/quests";
 import type { Shelf } from "@/lib/bar/types";
 
 // landscape by default; on a tall phone screen the graph is transposed so it
@@ -40,6 +41,9 @@ export function WorldMap({
   onWander,
   onClose,
   onDex,
+  onSettings,
+  profiled,
+  locked,
 }: {
   progress: Progress;
   shelves: Shelf[];
@@ -48,6 +52,11 @@ export function WorldMap({
   onWander: () => void;
   onClose: () => void;
   onDex: () => void;
+  onSettings: () => void;
+  /** has a verified profile (the ⚙ stops nudging) */
+  profiled: boolean;
+  /** the first mission still has the doors shut */
+  locked: boolean;
 }) {
   const [hover, setHover] = useState<string | null>(null);
   const [portrait] = useState(() => typeof matchMedia !== "undefined" && matchMedia("(max-aspect-ratio: 4/5)").matches);
@@ -90,7 +99,9 @@ export function WorldMap({
           <div>
             <div className="mapName">THE REALMS</div>
             <div className="mapSub">
-              {stamped}/{REALM_ORDER.length} stamped · click a stamped realm to travel
+              {locked
+                ? "the doors open once Rio's first job is done"
+                : `${stamped}/${REALM_ORDER.length} stamped · click a stamped realm to travel`}
             </div>
           </div>
           <div className="mapBtns">
@@ -99,6 +110,9 @@ export function WorldMap({
             </button>
             <button className="gBtn small ghost" onClick={onDex}>
               💿 dex
+            </button>
+            <button className={"gBtn small ghost" + (profiled ? "" : " nudge")} onClick={onSettings} title="settings + your profile">
+              ⚙ {profiled ? "settings" : "save progress"}
             </button>
           </div>
         </div>
@@ -172,7 +186,7 @@ export function WorldMap({
               <b>
                 {fr.kanji} {fr.name}
               </b>{" "}
-              · {fr.tagline} · dug {stats[focus].dug}/{stats[focus].total}
+              · {fr.tagline} · depth {DEPTH[focus] ?? "?"} · dug {stats[focus].dug}/{stats[focus].total}
               {focus === room ? " · you are here" : ""}
             </>
           ) : (

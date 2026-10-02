@@ -36,7 +36,7 @@ HALLUCINATE plays like **Pokémon meets crate-digging**. Each room is a *realm* 
 - back (crate pack, tote, mini gong)
 
 **When gifts drop:**
-- **Keepers:** every keeper gives a signature gift the first time you talk to them. Rio's welcome is the **Sombra tee**.
+- **Keepers:** every keeper except Rio gives a signature gift the first time you talk to them. The **Sombra tee** is now the first mission's reward (Oct 1).
 - **Adding records:** your first 新着 paste earns the **USB lanyard**.
 - **Guaranteed:** secrets and badges always gift.
 - **By chance:** digs gift 40% of the time, and after 2 dry digs the next one is guaranteed. Keeps gift 20% of the time and first visits 30%.
@@ -90,3 +90,13 @@ Flipping a crate or turning up a dig plays **30s of that record, just for you**.
 - **The omakase counter** (`OMAKASE.radio`, zone + pick `radio`) → `RadioCounter`: who picks, how to add.
 - **Welcome:** one first-visit card (`WELCOME_KEY`) carries the member number. `welcomeDueRef` suppresses the "You're #N" toast and the hub's realm banner that visit.
 - **Wording:** crate prompt "Dig through X", "✦ Save to my crate", "⤵ Play next for the room", "Submit a record".
+
+## Missions + crate slots (Oct 1)
+`lib/bar/quests.ts` holds the story layer: missions, crate slots and realm depth. The UI is `components/game/Quest.tsx` (tracker, deck, swap).
+- **Orientation, "Your First Record" (from Rio):** talk to Rio → ✦ save a record from any crate → put it on the deck (the deck zone now opens a picker of your crate) → back to Rio. The hand-in gives the **Sombra tee**, then Rio explains the game: deeper rooms have better records, missions grow your crate, trading is coming.
+- **Doors are locked until it's handed in.** `engine.setDoorsLocked()` blocks doors, `travelTo`, `wander` (the cat, the dice, R). A blocked try calls `onLocked` (a toast, throttled to every 1.5s). Door prompts read "🔒 Locked".
+- **Putting it on the deck counts even when the cue is refused** (a full queue, or ON AIR cue-lock), so a newcomer is never stuck.
+- **Old saves:** `grandfatherQuests()` marks the orientation done if a save has dug anything, been through a door, or owns the tee. `slotFloor` keeps every record a save already held.
+- **Slots:** 10 to start, +5 per mission handed in (`SLOTS_BASE`, `SLOTS_PER_QUEST`). Saving into a full crate opens the swap (let one go). Cueing from a crate only keeps the record when a slot is free. The Dex ✕ lets one go. **Titles and realm badges count `progress.kept`** (every record ever kept), not the crate, so letting one go never demotes you. Older saves are backfilled from `dug` on load.
+- **Depth:** `DEPTH` is the number of rooms from the hub (doors, then secret hatches), shown on the map. It's a label for now: the crates aren't ranked by depth yet.
+- After the hand-in, the **profile offer** shows once (see members.md). The Sombra list auto-offer waits until after the orientation, and never in the same visit as the profile offer.

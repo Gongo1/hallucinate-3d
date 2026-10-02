@@ -18,6 +18,8 @@ export function Dialogue({
   onMap,
   onWander,
   gift,
+  lines: missionLines,
+  locked = false,
 }: {
   room: string;
   advanceRef: MutableRefObject<(() => void) | null>;
@@ -26,10 +28,14 @@ export function Dialogue({
   onWander: () => void;
   /** a gift this keeper is holding for you — handed over when you close */
   gift?: { icon: string; name: string } | null;
+  /** a mission's talk, in place of the keeper's usual lines */
+  lines?: string[] | null;
+  /** the doors are shut (the first mission): no map / wander yet */
+  locked?: boolean;
 }) {
   const realm = REALMS[room];
   const keeper = realm?.keeper;
-  const lines = keeper?.lines ?? [];
+  const lines = missionLines?.length ? missionLines : keeper?.lines ?? [];
   const [page, setPage] = useState(0);
   const [chars, setChars] = useState(0);
   const startRef = useRef(0); // typewriter clock (pushed far back to finish a line)
@@ -112,15 +118,23 @@ export function Dialogue({
                     🎁 take the gift
                   </button>
                 )}
-                <button className="gBtn small" onClick={onMap}>
-                  🗺 map
-                </button>
-                <button className="gBtn small" onClick={onWander}>
-                  🎲 wander
-                </button>
-                <button className="gBtn small ghost" onClick={onClose}>
-                  close
-                </button>
+                {locked ? (
+                  <button className="gBtn small" onClick={onClose}>
+                    on it
+                  </button>
+                ) : (
+                  <>
+                    <button className="gBtn small" onClick={onMap}>
+                      🗺 map
+                    </button>
+                    <button className="gBtn small" onClick={onWander}>
+                      🎲 wander
+                    </button>
+                    <button className="gBtn small ghost" onClick={onClose}>
+                      close
+                    </button>
+                  </>
+                )}
               </span>
             ) : (
               <span className={"dlgNext" + (done ? " on" : "")}>▼</span>

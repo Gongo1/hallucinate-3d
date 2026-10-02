@@ -1,5 +1,6 @@
 import "server-only";
 import crypto from "node:crypto";
+import { cookies } from "next/headers";
 
 // Anonymous membership cookie. The value is "m.<member uuid>.<hmac>", signed with
 // ADMIN_SECRET under its own "m" tag (so a member cookie can never pass as a
@@ -46,3 +47,23 @@ export function newKeyCode(): string {
 }
 
 export const KEY_CODE_RE = /^[23456789ABCDEFGHJKMNPQRSTUVWXYZ]{8}$/;
+
+/** Who this request is (from the signed member cookie), else null. */
+export async function currentMemberId(): Promise<string | null> {
+  return readMemberCookie((await cookies()).get(MEMBER_COOKIE)?.value);
+}
+
+/** Put this device on a membership. */
+export async function setMemberCookie(id: string) {
+  const value = mintMemberCookie(id);
+  if (!value) return;
+  (await cookies()).set(MEMBER_COOKIE, value, {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    path: "/",
+    maxAge: MEMBER_MAX_AGE,
+  });
+}
+
+export const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;

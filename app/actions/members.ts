@@ -1,13 +1,7 @@
 "use server";
 
 import { cookies } from "next/headers";
-import {
-  KEY_COOKIE,
-  MEMBER_COOKIE,
-  MEMBER_MAX_AGE,
-  mintMemberCookie,
-  readMemberCookie,
-} from "@/lib/members/auth";
+import { EMAIL_RE, KEY_COOKIE, currentMemberId, setMemberCookie } from "@/lib/members/auth";
 import { adminClient, createMember, foldMember, keyInfo, memberNumber, mintKeys, redeemKey } from "@/lib/members/store";
 import { POINTS, type ScoreKind } from "@/lib/members/tag";
 import { weekEndsAt, weekKey } from "@/lib/bar/week";
@@ -16,22 +10,6 @@ import { weekEndsAt, weekKey } from "@/lib/bar/week";
 // signed httpOnly member cookie — the client never says who it is. Every action
 // returns quietly (null / ok:false) when membership isn't configured, so the bar
 // never breaks over it.
-
-async function setMemberCookie(id: string) {
-  const value = mintMemberCookie(id);
-  if (!value) return;
-  (await cookies()).set(MEMBER_COOKIE, value, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: MEMBER_MAX_AGE,
-  });
-}
-
-async function currentMemberId(): Promise<string | null> {
-  return readMemberCookie((await cookies()).get(MEMBER_COOKIE)?.value);
-}
 
 export type KnockResult = {
   number: number;
@@ -112,8 +90,6 @@ export async function myMembership(): Promise<Membership | null> {
     onList: !!list?.length,
   };
 }
-
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 /** "Stay close to the room." Adds the email to the Sombra list. */
 export async function joinList(email: string): Promise<{ ok: boolean; message?: string }> {
