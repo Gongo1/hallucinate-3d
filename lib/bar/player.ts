@@ -51,6 +51,7 @@ interface YTPlayer {
   seekTo(seconds: number, allowSeekAhead: boolean): void;
   getDuration(): number;
   getCurrentTime(): number;
+  getVideoData?(): { video_id?: string };
   setVolume(v: number): void;
   unMute(): void;
 }
@@ -100,6 +101,9 @@ export class BarPlayer {
   private ytReady = false;
   private sc: SCWidget | null = null;
   private scReady = false;
+  // a SoundCloud track is still loading: the widget answers for the OLD sound
+  // until it lands, so its length/position must not be read as the new one's
+  private scLoading = false;
   private progressTimer: ReturnType<typeof setInterval> | null = null;
   private fadeTimer: ReturnType<typeof setInterval> | null = null;
   private blockTimer: ReturnType<typeof setTimeout> | null = null;
@@ -483,10 +487,12 @@ export class BarPlayer {
     // Once the widget exists, switch tracks THROUGH it (load), not by swapping
     // iframe.src — a src swap orphans the bound PLAY/PAUSE/FINISH handlers, which
     // is exactly why pause stopped working on uploaded SoundCloud tracks.
+    this.scLoading = true;
     if (this.sc && this.scReady) {
       this.sc.load(url, {
         ...BarPlayer.SC_OPTS,
         callback: () => {
+          this.scLoading = false;
           if (this.state.source !== "sc") return; // you moved on while it loaded
           if (seekMs > 0) this.sc?.seekTo(seekMs);
           this.sc?.play();
@@ -520,6 +526,7 @@ export class BarPlayer {
     const scActive = () => this.state.source === "sc";
     this.sc.bind(E.READY, () => {
       this.scReady = true;
+      this.scLoading = false;
       if (!scActive()) {
         this.sc?.pause();
         return;
@@ -535,6 +542,7 @@ export class BarPlayer {
         this.sc?.pause();
         return;
       }
+      this.scLoading = false; // playing = the new sound has landed
       this.setPlaying(true);
     });
     this.sc.bind(E.PAUSE, () => scActive() && this.setPlaying(false));
@@ -679,8 +687,15 @@ export class BarPlayer {
   /* ----------------------------------------------------------- progress */
   private tickProgress() {
     if (!this.state.playing || this.previewTimer) return; // a preview isn't the room's progress
+    // Only read the player once it holds the track we think it does. Right
+    // after a switch (a preview handing back to the room, the room moving on)
+    // it still answers for the previous video/sound, and reporting THAT length
+    // as the room track's makes the host's wall-clock backstop skip the room
+    // mid-song.
     if (this.state.source === "yt" && this.ytReady && this.yt) {
       try {
+        const loaded = this.yt.getVideoData ? this.yt.getVideoData()?.video_id : this.state.track?.ytId;
+        if (loaded !== this.state.track?.ytId) return;
         const d = this.yt.getDuration();
         const t = this.yt.getCurrentTime();
         if (d > 0) {
@@ -693,8 +708,10 @@ export class BarPlayer {
           this.emit();
         }
       } catch {}
-    } else if (this.state.source === "sc" && this.sc) {
+    } else if (this.state.source === "sc" && this.sc && !this.scLoading) {
+      const fresh = () => this.state.source === "sc" && !this.scLoading && !this.previewTimer;
       this.sc.getDuration((durMs) => {
+        if (!fresh()) return; // a switch started while it answered
         if (durMs > 0) {
           this.reportDuration(durMs / 1000);
           this.sc!.getPosition((pos) => {
