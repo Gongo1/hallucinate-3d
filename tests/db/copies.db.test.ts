@@ -1,6 +1,8 @@
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { Client } from "pg";
 import { STARTER_CAPACITY } from "@/lib/collection/rules";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { connect, dockerAvailable, freshDb, migrationSql } from "./pg";
 
 // The catalog the migration backfills from: one track filed in two crates, one
@@ -253,5 +255,30 @@ run("collectible copies (Postgres)", () => {
       await db.query("delete from hallu_members where id = $1", [a]);
       expect((await copiesOf("yt:plainYT"))[0].owner_id).toBeNull();
     });
+  });
+});
+
+run("follow-up hardening (20261004b)", () => {
+  it("closes the advisor findings and keeps inserts + minting working", async () => {
+    await freshDb(SEED);
+    const c = await connect();
+    try {
+      await c.query(readFileSync(path.resolve(__dirname, "../../supabase/migrations/20261004b_copies_hardening.sql"), "utf8"));
+      const p = (
+        await c.query(`select
+          has_function_privilege('anon', 'hallu_records_mint()', 'execute') as anon_mint_trigger,
+          has_function_privilege('authenticated', 'hallu_records_mint()', 'execute') as authed_mint_trigger,
+          (select proconfig from pg_proc where proname = 'hallu_track_key') as cfg`)
+      ).rows[0];
+      expect(p).toEqual({ anon_mint_trigger: false, authed_mint_trigger: false, cfg: ["search_path=pg_catalog"] });
+      await c.query("insert into records (title, yt_id) values ('after hardening', 'hardenYT')");
+      const { rows } = await c.query("select count(*)::int n from hallu_copies where track_key = 'yt:hardenYT'");
+      expect(rows[0].n).toBe(3);
+      const k = await c.query("select hallu_track_key(null, 'https://m.soundcloud.com/A/b/?x=1') k");
+      expect(k.rows[0].k).toBe("sc:soundcloud.com/a/b");
+      await c.query(readFileSync(path.resolve(__dirname, "../../supabase/migrations/20261004b_copies_hardening.sql"), "utf8")); // re-run
+    } finally {
+      await c.end();
+    }
   });
 });
