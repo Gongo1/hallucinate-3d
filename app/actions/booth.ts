@@ -8,15 +8,17 @@ import {
   mintToken,
   verifyToken,
 } from "@/lib/booth/auth";
-import { ADMIN_EVENT, BAR_CHANNEL, type AdminCmd } from "@/lib/booth/commands";
+import { ADMIN_EVENT, type AdminCmd } from "@/lib/booth/commands";
+import { serverBroadcast } from "@/lib/booth/broadcast";
+import { signTicket } from "@/lib/collection/sign";
 import { MEMBER_COOKIE, MEMBER_MAX_AGE, mintMemberCookie, newKeyCode, readMemberCookie } from "@/lib/members/auth";
 import { adminClient, foldMember } from "@/lib/members/store";
 
 // God-mode authority lives HERE, on the server. The client can call these, but
 // every privileged action re-verifies the signed owner cookie before doing
 // anything. There is no admin flag in the client bundle and no secret in any
-// Realtime payload — the command broadcast carries only the command + an
-// "origin:server" marker the host trusts because only this verified path emits it.
+// Realtime payload — the command broadcast carries a ticket signed by the
+// server (lib/collection/ticket.ts), which is what the host checks.
 
 export async function boothLogin(passphrase: string): Promise<{ ok: boolean }> {
   if (!checkPassphrase(passphrase)) return { ok: false };
@@ -54,30 +56,12 @@ export async function boothCommand(cmd: AdminCmd): Promise<{ ok: boolean }> {
   const jar = await cookies();
   if (!verifyToken(jar.get(BOOTH_COOKIE)?.value)) return { ok: false };
 
-  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
-  if (!url || !key) return { ok: false };
-
-  const res = await fetch(`${url}/realtime/v1/api/broadcast`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      apikey: key,
-      Authorization: `Bearer ${key}`,
-    },
-    body: JSON.stringify({
-      messages: [
-        {
-          topic: BAR_CHANNEL,
-          event: ADMIN_EVENT,
-          // `origin: "server"` is informational; authority came from the verified
-          // cookie above. A forged client broadcast can't reach this code path.
-          payload: { ...cmd, origin: "server", at: Date.now() },
-        },
-      ],
-    }),
-  });
-  return { ok: res.status === 202 || res.ok };
+  // The host obeys only what the server signed: anyone holding the page's
+  // public key can broadcast an "admin" event, but not sign one. The plain
+  // command rides along for hosts still on an older build.
+  const token = signTicket({ k: "admin", cmd });
+  if (!token) return { ok: false };
+  return { ok: await serverBroadcast(ADMIN_EVENT, { ...cmd, token, origin: "server", at: Date.now() }) };
 }
 
 // ----- founding members (owner only) -----

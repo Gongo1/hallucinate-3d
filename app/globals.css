@@ -549,7 +549,7 @@ canvas {
   z-index: 2;
   text-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
 }
-#playBtn {
+#claimBtn {
   background: var(--lantern);
   color: var(--ink);
   border: 0;
@@ -3521,13 +3521,13 @@ select,
   opacity: 0.65;
   font-variant-numeric: tabular-nums;
 }
-#recordBack #playBtn {
+#recordBack #claimBtn {
   background: var(--ink);
   color: var(--shoji);
   box-shadow: none;
   margin-top: 4px;
 }
-#recordBack #playBtn:disabled {
+#recordBack #claimBtn:disabled {
   opacity: 0.5;
   cursor: default;
 }
@@ -3651,7 +3651,7 @@ select,
   #recordBack .rbTitle {
     font-size: 16px;
   }
-  #recordBack #playBtn,
+  #recordBack #claimBtn,
   #recordBack #keepBtn {
     grid-column: 1 / -1;
     justify-self: stretch;
@@ -4266,6 +4266,16 @@ select,
   width: 10px;
   height: 30px;
   border-radius: 3px;
+}
+/* a collectible copy's number (◆2 = copy #2 of 3) */
+.pickSwatch.copySerial {
+  width: auto;
+  height: auto;
+  padding: 4px 7px;
+  font-family: "DM Mono", monospace;
+  font-size: 12px;
+  color: var(--lantern);
+  border: 1px solid rgba(255, 179, 94, 0.45);
 }
 .pickMeta {
   flex: 1;

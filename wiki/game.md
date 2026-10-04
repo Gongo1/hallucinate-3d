@@ -81,7 +81,7 @@ Flipping a crate or turning up a dig plays **30s of that record, just for you**.
 
 ## Crates as the back of a record + play counts (bdde6c3, Sep 30)
 - **A crate opens as a paper back cover:** the full tracklist split into Side A / B, play counts (▶) and lengths per row, and ✦ on rows already in your Dex. The selected record sits on the left with sleeve, cue and keep.
-- **Controls:** ↑/↓ (or ←/→) move, ↵ cues, K keeps. The listener is capture-phase, so the engine never sees those keys while a crate is open. On a phone, tap a row.
+- **Controls:** ↑/↓ (or ←/→) move, K keeps. (↵ used to cue; since Oct 4 crates don't queue anything, see Collectible copies.) The listener is capture-phase, so the engine never sees those keys while a crate is open. On a phone, tap a row.
 - **The preview follows the selection** after a 260ms beat, so arrowing down a list doesn't load every row.
 - **Play counts:** `records.play_count` (migration `20260930c`). The room host reports each new track once (`presence.amHost()` → `notePlay` → `hallu_note_play()`, which ignores repeats within 3 minutes). Counting started 2026-09-30, with no history before it. `loadShelves` loads without counts if the migration hasn't run.
 
@@ -107,3 +107,25 @@ Flipping a crate or turning up a dig plays **30s of that record, just for you**.
 - **Slots:** 10 to start, +5 per mission handed in (`SLOTS_BASE`, `SLOTS_PER_QUEST`). Saving into a full crate opens the swap (let one go). Cueing from a crate only keeps the record when a slot is free. The Dex ✕ lets one go. **Titles and realm badges count `progress.kept`** (every record ever kept), not the crate, so letting one go never demotes you. Older saves are backfilled from `dug` on load.
 - **Depth:** `DEPTH` is the number of rooms from the hub (doors, then secret hatches), shown on the map. It's a label for now: the crates aren't ranked by depth yet.
 - After the hand-in, the **profile offer** shows once (see members.md). The Sombra list auto-offer waits until after the orientation, and never in the same visit as the profile offer.
+
+## Collectible copies + the backpack (phase 1, Oct 4)
+A track in the catalog (`records`) is not a collectible. Every distinct track (`records.track_key`: `yt:<id>` / `sc:<normalized url>`) has **exactly three numbered copies across the whole game**.
+- **Migration:** `supabase/migrations/20261004_copies.sql`. It adds `hallu_copies` and `hallu_copy_events` (RLS on, no policies), a minting trigger on `records`, a backfill, `hallu_claim_copy` and `hallu_fold_copies`. It only adds things and is safe to re-run.
+- **Claim** (◆ in a crate): `claimCopy` (`app/actions/collection.ts`) → `hallu_claim_copy`.
+  - It locks the member row, so two tabs can't both get past the 8-copy limit.
+  - A conditional update means only one player wins a copy.
+  - One copy per track per player (unique index).
+  - Starter limit `STARTER_CAPACITY` = 8 (`lib/collection/rules.ts`).
+- **Crates** show only records with a copy left. A track whose 3 copies are all claimed is hidden from every crate, but still plays on Sombra Radio, which reads the whole catalog (`lib/bar/radio.ts`).
+- **Staying in sync:**
+  - A claim sends a server-signed `copy` event, and everyone's crates drop that copy live.
+  - Opening a crate refetches its availability (`crateCopies`).
+  - The backpack refetches when opened and when the tab regains focus.
+- **Queue rule:** only a copy you hold goes on the room's queue (Backpack **B**, or the deck).
+  - `requestCue` checks ownership and returns a ticket signed with `TICKET_SIGNING_KEY` (ECDSA P-256, server only).
+  - The host (`presence.ts` `admitIntent`) queues only cues with a valid, unexpired, unspent ticket issued to the sender, and plays the **signed** track.
+  - Crate play-next, Dex ⤵ and Added-board ⤵ are gone.
+  - God-mode `admin` events must carry a signed ticket too (`boothCommand`).
+  - Keys: `TICKET_SIGNING_KEY` + `NEXT_PUBLIC_TICKET_PUBLIC_KEY`. With no key, nothing verifies, so queueing fails closed.
+- **Rio's step 2** is a **practice spin**: during that step the deck plays a ✦-saved record just for you (a preview) and counts the step. It never reaches the queue. ✦ Save / My crate are unchanged.
+- **Tests:** `npm test` runs the vitest unit suites and `tests/db`, which uses a throwaway Postgres 16 in Docker and applies the real migration.

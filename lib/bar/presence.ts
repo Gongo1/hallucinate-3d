@@ -9,6 +9,7 @@ import {
   type FlowLimits,
 } from "./flow";
 import { defaultFit, gearCode, type Fit } from "./fits";
+import { NonceLedger, admitAdmin, admitCue, verifyTicket, type TicketTrack } from "@/lib/collection/ticket";
 
 // Supabase Realtime allows 5 presence calls per client per 30s and CLOSES the
 // channel on the 6th ("Client presence rate limit exceeded"). Stay under it.
@@ -87,7 +88,10 @@ export interface RoomState {
 
 type Intent =
   | { kind: "skip"; by: string }
-  | { kind: "cue"; track: Track; by: string; byId: string }
+  // `ticket` is the server's word that byId holds a copy of the track (signed;
+  // lib/collection/ticket.ts). The host queues the SIGNED track and ignores
+  // `track`, which only rides along for hosts on older builds.
+  | { kind: "cue"; track: Track; ticket?: string; by: string; byId: string }
   | { kind: "uncue"; recordKey: string; byId: string } // remove my own pending entry
   | { kind: "clearCue"; by: string } // wipe the whole cue (anti-spam)
   // "the track that started at `startedAt` just ended on my player" — lets ANY
@@ -115,6 +119,8 @@ interface PresenceOpts {
   openRoom: () => { track: Track; seed: number; index: number } | null;
   /** auto-radio: given seed+index, the next auto track when the cue is empty */
   nextAuto: (seed: number, index: number) => { track: Track; index: number } | null;
+  /** a collectible copy was just claimed (server-signed): crates drop it */
+  onCopyClaimed?: (copyId: string, trackKey: string) => void;
 }
 
 interface TrackMeta {
@@ -180,6 +186,8 @@ export class BarPresence {
   private playedStartedAt = -1; // dedupe: only (re)load when the track changes
   private cooldownAdvanceTimer: ReturnType<typeof setTimeout> | null = null;
   private cueAtById = new Map<string, number>(); // host: last cue time per session
+  private cueTickets = new NonceLedger(); // host: spent cue tickets (no replays)
+  private adminTickets = new NonceLedger(); // host: spent god-mode tickets
   private myLastCueAt = 0; // this session's last accepted cue (for the UI timer)
 
   constructor(opts: PresenceOpts) {
@@ -261,12 +269,19 @@ export class BarPresence {
         // a newcomer: show them my current look now, not my last presence meta
         if (this.pumpTimer) this.sendLook();
       })
-      // GOD-MODE admin events. These originate ONLY from the server action (which
-      // verified the owner cookie); a normal client has no way to emit a trusted
-      // one. The host applies them authoritatively — bypassing votes/cooldown/cap.
+      // GOD-MODE admin events. Anyone can broadcast one, so the host applies only
+      // a command the server signed (after verifying the owner cookie) —
+      // bypassing votes/cooldown/cap.
       .on("broadcast", { event: "admin" }, ({ payload }) =>
-        this.onAdmin(payload as Record<string, unknown>)
+        void this.onAdmin(payload as Record<string, unknown>)
       )
+      // a collectible copy was claimed: everyone's crates drop it (signed, so a
+      // forged event can't hide records)
+      .on("broadcast", { event: "copy" }, ({ payload }) => {
+        void verifyTicket((payload as { token?: unknown }).token).then((t) => {
+          if (t?.k === "copy") this.opts.onCopyClaimed?.(t.copy, t.track);
+        });
+      })
       .subscribe((status) => {
         if (status === "CLOSED" && this.channel === ch) {
           // the server shut the channel (e.g. a rate limit) — rebuild it rather
@@ -359,11 +374,12 @@ export class BarPresence {
   skip() {
     this.sendIntent({ kind: "skip", by: this.id });
   }
-  /** Cue a song to play next. Subject to the per-user cap + anti-spam rate limit. */
-  cue(track: Track) {
+  /** Cue a copy you hold to play next, with the server's signed ticket for it
+   *  (requestCue). Subject to the per-user cap + anti-spam rate limit. */
+  cue(track: Track, ticket: string) {
     if (!this.canCue()) return; // local guard: don't even broadcast a doomed cue
     this.myLastCueAt = Date.now(); // optimistic; host's cueAtById is authoritative
-    this.sendIntent({ kind: "cue", track, by: this.color, byId: this.id });
+    this.sendIntent({ kind: "cue", track, ticket, by: this.color, byId: this.id });
   }
   /** Remove one of MY OWN pending cue entries. */
   uncue(recordKey: string) {
@@ -412,12 +428,20 @@ export class BarPresence {
   }
 
   private sendIntent(intent: Intent) {
-    if (this.isHost()) this.applyIntent(intent);
+    if (this.isHost()) void this.admitIntent(intent);
     else void this.channel?.send({ type: "broadcast", event: "intent", payload: intent });
   }
   private onIntent(intent: Intent) {
     if (!this.isHost() || !this.room) return; // only the host mutates room state
-    this.applyIntent(intent);
+    void this.admitIntent(intent);
+  }
+  /** The host's gate. A cue gets onto the queue only with a server-signed
+   *  ticket for a copy its sender holds; what plays is the signed track. */
+  private async admitIntent(intent: Intent) {
+    if (intent.kind !== "cue") return this.applyIntent(intent);
+    const t = await admitCue(intent.ticket, intent.byId, this.cueTickets);
+    if (!t || !this.isHost()) return;
+    this.applyIntent({ ...intent, track: ticketTrack(t) });
   }
 
   /**
@@ -426,9 +450,12 @@ export class BarPresence {
    * These bypass vote-skip / cooldown / cue-cap — god mode is the ONLY thing
    * allowed to. A non-host client ignores it (its host will apply + rebroadcast).
    */
-  private onAdmin(p: Record<string, unknown>) {
+  private async onAdmin(raw: Record<string, unknown>) {
     if (!this.isHost() || !this.room) return;
-    const kind = p.kind as string;
+    const cmd = await admitAdmin(raw.token, this.adminTickets);
+    if (!cmd || !this.isHost() || !this.room) return;
+    const p = cmd as unknown as Record<string, unknown>; // the signed command, never the envelope
+    const kind = cmd.kind;
     if (kind === "forceSkip") {
       this.advance(false); // immediate, no cooldown, ignores votes
     } else if (kind === "clearCue") {
@@ -988,4 +1015,18 @@ export class BarPresence {
 /** Stable identity for a track in the cue (DB id, else source url/id). */
 export function trackKey(t: Track): string {
   return t.id ?? t.ytId ?? t.scUrl ?? `${t.artist}-${t.title}`;
+}
+
+/** a cue ticket's track, as the queue carries it */
+function ticketTrack(t: TicketTrack): Track {
+  return {
+    title: t.title,
+    artist: t.artist,
+    ytId: t.ytId,
+    scUrl: t.scUrl,
+    id: t.id,
+    durationSeconds: t.durationSeconds,
+    fullSet: t.fullSet,
+    trackKey: t.trackKey,
+  };
 }

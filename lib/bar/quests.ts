@@ -152,21 +152,22 @@ export function rioLines(phase: QuestPhase, step: number, cap: number): string[]
       "Hey — welcome to the Sombra Listening Room. I'm Rio, I scout records for the room.",
       "Before you go wandering, a first job. Every digger starts the same way: with one record.",
       "Walk up to any crate in here and flip through. Each record plays 30 seconds, just for you. When one stops you, hit ✦ Save to my crate.",
-      "Then take it to the deck, down by the big speakers, and put it on. The whole room hears it. Come find me after.",
+      "Then take it to the deck, down by the big speakers, and give it a practice spin. Come find me after.",
       "The doors stay shut till then. House rules.",
     ];
   if (phase === "active" && step <= 0)
     return ["No record yet? Walk up to any crate, flip through, and ✦ save the one that stops you."];
   if (phase === "active")
-    return ["Nice pull. Now take it to the deck, down by the speakers, and put it on for the room."];
+    return ["Nice pull. Now take it to the deck, down by the speakers, and give it a practice spin."];
   if (phase === "ready")
     return [
-      "I heard that from across the room. Good taste. That's your first one.",
+      "Saw you at the deck. Good taste. That's your first one.",
       "Here, you've earned this. The ☉☽ on the chest is how we know our own.",
       "Now, how this place works. The doors are open. Every room is its own realm, with its own crates and its own keeper.",
       "The deeper you go, the better the records. Past the garden, under the archive… the good stuff is never by the front door.",
       `Your crate holds ${cap} records for now. Every mission you finish, it holds more. And soon you'll be able to trade with other diggers, so dig with intent.`,
-      "Press M for the map and C for your crate. Go find something.",
+      "One more thing. Every track has only three copies in the whole bar. Hit ◆ Claim copy and it's yours, in your backpack. Only a copy you hold goes on the deck for the room.",
+      "Press M for the map, C for your crate, B for your backpack. Go find something.",
     ];
   return [];
 }
