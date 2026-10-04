@@ -166,8 +166,7 @@ export function rioLines(phase: QuestPhase, step: number, cap: number): string[]
       "Now, how this place works. The doors are open. Every room is its own realm, with its own crates and its own keeper.",
       "The deeper you go, the better the records. Past the garden, under the archive… the good stuff is never by the front door.",
       `Your crate holds ${cap} records for now. Every mission you finish, it holds more. And soon you'll be able to trade with other diggers, so dig with intent.`,
-      "One more thing. Every track has only three copies in the whole bar. Hit ◆ Claim copy and it's yours, in your backpack. Only a copy you hold goes on the deck for the room.",
-      "Press M for the map, C for your crate, B for your backpack. Go find something.",
+      "Press M for the map and C for your crate. Go find something.",
     ];
   return [];
 }

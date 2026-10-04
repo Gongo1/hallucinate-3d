@@ -9,6 +9,11 @@
 -- Additive: one generated column on records, two new tables (RLS on, no
 -- policies: only the server touches them), a minting trigger, and the claim /
 -- fold functions (service_role only). Safe to re-run.
+--
+-- Adding the column takes a brief exclusive lock on records (441 rows: ms).
+-- If live traffic holds the table, fail fast rather than queue inserts
+-- behind us; just run it again.
+set lock_timeout = '5s';
 
 -- One canonical key per audio source, so a track filed in two crates is still
 -- one track (and shares one set of three copies). SoundCloud URLs are
@@ -209,3 +214,5 @@ revoke execute on function hallu_fold_copies(uuid, uuid) from public, anon, auth
 grant execute on function hallu_mint_copies(text, text, text, text, text) to service_role;
 grant execute on function hallu_claim_copy(uuid, uuid, int) to service_role;
 grant execute on function hallu_fold_copies(uuid, uuid) to service_role;
+
+reset lock_timeout;
