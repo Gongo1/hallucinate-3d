@@ -18,6 +18,9 @@ export interface Track {
   plays?: number;
   /** a full DJ set from a FULL_SET_CRATES crate — exempt from the 15-min backstop */
   fullSet?: boolean;
+  /** the track's identity across crates ("yt:…" / "sc:…"): its collectible
+   *  copies are keyed by it (lib/collection) */
+  trackKey?: string;
 }
 
 export interface Shelf {

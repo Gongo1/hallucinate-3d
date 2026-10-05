@@ -7,6 +7,8 @@
 import type { Quest, QuestPhase } from "@/lib/bar/quests";
 import type { DugEntry } from "@/lib/bar/progress";
 import { TierChip } from "./shared";
+import { CopyList } from "./Backpack";
+import type { OwnedCopy } from "@/lib/collection/rules";
 
 /** Top-left, out of the way: the mission you're on and the one thing to do next. */
 export function QuestTracker({
@@ -85,21 +87,32 @@ function RecordList({
   );
 }
 
-/** The turntables: put one of your records on for the whole room. */
+/** The turntables: put a copy you hold on for the whole room. During Rio's
+ *  orientation a saved record gets a practice spin instead: it plays just for
+ *  you and counts for the step, but never reaches the room's queue. */
 export function DeckPanel({
-  rows,
+  copies,
+  practice,
   nowPlaying,
   status,
-  onPlace,
+  canQueue,
+  onQueue,
+  onPractice,
   onClose,
 }: {
-  rows: CrateRow[];
+  /** your backpack (null = collecting isn't open) */
+  copies: OwnedCopy[] | null;
+  /** saved records offered for Rio's practice spin (empty outside that step) */
+  practice: CrateRow[];
   nowPlaying: string | null;
   /** why you can't right now ("wait 40s"), or the cue count */
   status: string;
-  onPlace: (key: string) => void;
+  canQueue: boolean;
+  onQueue: (copy: OwnedCopy) => void;
+  onPractice: (key: string) => void;
   onClose: () => void;
 }) {
+  const mine = copies ?? [];
   return (
     <div className="overlay open" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="pickBox" role="dialog" aria-label="The deck">
@@ -111,19 +124,30 @@ export function DeckPanel({
         <div className="lcBody">
           {nowPlaying ? (
             <>
-              On now: <b>{nowPlaying}</b>. Yours goes on next, for the whole room.
+              On now: <b>{nowPlaying}</b>.{" "}
             </>
-          ) : (
-            "Yours goes on next, for the whole room."
-          )}
+          ) : null}
+          A copy from your backpack goes on next, for the whole room.
         </div>
-        {rows.length ? (
+        {practice.length > 0 && (
           <>
-            <RecordList rows={rows} action="▶ put it on" onPick={onPlace} />
+            <div className="lcKicker">RIO&apos;S PRACTICE SPIN · JUST YOU</div>
+            <RecordList rows={practice} action="◐ practice spin" onPick={onPractice} />
+          </>
+        )}
+        {mine.length ? (
+          <>
+            <CopyList copies={mine} action="▶ put it on" disabled={!canQueue} onPick={onQueue} />
             <div className="lcFine">{status}</div>
           </>
         ) : (
-          <div className="pickEmpty">Your crate&apos;s empty. Flip through any crate and hit ✦ Save to my crate first.</div>
+          !practice.length && (
+            <div className="pickEmpty">
+              {copies === null
+                ? "Collecting isn't open right now."
+                : "Your backpack's empty. Flip through any crate and hit ◆ Claim copy first."}
+            </div>
+          )
         )}
       </div>
     </div>

@@ -20,7 +20,7 @@ import {
 import type { Shelf, Track } from "@/lib/bar/types";
 import { GIFTS } from "@/lib/bar/gifts";
 import { slotCap } from "@/lib/bar/quests";
-import { TierChip, cueLabel, recordLink, type FlowUi } from "./shared";
+import { TierChip, recordLink } from "./shared";
 
 /** the special tab id for your gift stash */
 export const STASH = "stash";
@@ -29,9 +29,6 @@ export function Dex({
   progress,
   shelves,
   room,
-  flow,
-  solo,
-  onCue,
   onClose,
   onMap,
   startTab,
@@ -41,9 +38,6 @@ export function Dex({
   progress: Progress;
   shelves: Shelf[];
   room: string;
-  flow: FlowUi;
-  solo: boolean;
-  onCue: (t: Track) => void;
   onClose: () => void;
   onMap: () => void;
   /** open on a realm id or STASH (default: the current realm) */
@@ -221,9 +215,6 @@ export function Dex({
                     </div>
                   </div>
                   <TierChip tier={entry.tier} small />
-                  <button className="dexCue" disabled={!flow.canCue} onClick={() => onCue(track)} title={cueLabel(flow, solo)}>
-                    ⤵
-                  </button>
                   {link && (
                     <a className="dexOpen" href={link} target="_blank" rel="noopener noreferrer" title="open">
                       ↗

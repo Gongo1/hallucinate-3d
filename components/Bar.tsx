@@ -43,6 +43,7 @@ import {
 } from "@/lib/bar/gifts";
 import type { Shelf, Track } from "@/lib/bar/types";
 import { REALMS, REALM_ORDER, SECRETS } from "@/lib/bar/realms";
+import { mulberry32, weightedPick } from "@/lib/bar/radio";
 import {
   getProgress,
   markVisited,
@@ -79,6 +80,10 @@ import { Dialogue } from "@/components/game/Dialogue";
 import { DeckPanel, QuestTracker, SwapPanel, crateRows } from "@/components/game/Quest";
 import { ProfileCard, Settings } from "@/components/game/Settings";
 import { confirmProfile, myProfile, saveProfileProgress, type MyProfile } from "@/app/actions/profile";
+import { claimCopy, crateCopies, myBackpack, requestCue, type Backpack as BackpackState } from "@/app/actions/collection";
+import { Backpack } from "@/components/game/Backpack";
+import { COPIES_PER_TRACK, type Availability, type OwnedCopy } from "@/lib/collection/rules";
+import { claimButton, claimableRecords, copiesLeft, dropCopy, mergeAvailability, type ClaimButton } from "@/lib/collection/crate";
 import { Dex, STASH } from "@/components/game/Dex";
 import { GiftCard, type GiftItem } from "@/components/game/GiftCard";
 import { WorldMap } from "@/components/game/WorldMap";
@@ -138,69 +143,6 @@ function ago(ms: number): string {
 
 const REACTIONS = ["👏", "🔥", "☕", "🙏", "🕺"];
 
-// A small deterministic RNG. Seeded so a given (seed, index) picks the same track —
-// the host advances the radio and broadcasts the result, so all clients agree and a
-// promoted host can keep the sequence going from the shared index.
-function mulberry32(a: number) {
-  return function () {
-    a |= 0;
-    a = (a + 0x6d2b79f5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-// ENERGY × TIME auto-radio. The phase (lib/bar/clock.ts) gives a target energy;
-// each crate weights toward the radio by how close its energy is to that target —
-// so the favored crates (Detroit at Afterhours, Golden Hour at Sunrise, …) emerge
-// purely from data, never a hardcoded list. The non-zero `floor` means NO crate is
-// ever locked out — you can always dig anything; the pull is gravity, not a gate.
-function energyWeight(energy: number, target: number): number {
-  // floor 0.01 (never zero → never locked out) + a steep 0.22^distance falloff so
-  // the phase's crates clearly lead. Tuned against the live library so each phase's
-  // favored crates emerge (Detroit/Deep Down at night, Golden Hour/Organica at dawn).
-  return 0.01 + Math.pow(0.22, Math.abs(energy - target));
-}
-
-/**
- * Pick one playable record, weighted per-record by its crate's energy proximity to
- * `target`. Per-record (not per-crate) weighting lets energy dominate the pick while
- * bigger crates still bring variety. `avoidKey` re-rolls once to dodge an immediate
- * repeat of the now-playing track. Returns null if nothing is loaded yet.
- */
-function weightedPick(
-  shelves: Shelf[],
-  target: number,
-  rnd: () => number,
-  avoidKey?: string
-): Track | null {
-  const pool: { track: Track; w: number }[] = [];
-  let total = 0;
-  for (const s of shelves) {
-    if (s.ingest) continue; // the 新着 paste crate isn't a radio source
-    const w = energyWeight(s.energy ?? 3, target);
-    for (const r of s.records) {
-      if (!r.ytId && !r.scUrl) continue;
-      if (r.fullSet) continue; // full DJ sets are cue-only — never the radio's pick
-      pool.push({ track: r, w });
-      total += w;
-    }
-  }
-  if (!pool.length) return null;
-  const roll = () => {
-    let n = rnd() * total;
-    for (const e of pool) {
-      n -= e.w;
-      if (n <= 0) return e.track;
-    }
-    return pool[pool.length - 1].track;
-  };
-  let pick = roll();
-  if (avoidKey && pool.length > 1 && trackKey(pick) === avoidKey) pick = roll();
-  return pick;
-}
-
 /** the game layer's engine/UI handlers (kept in a ref so callbacks see fresh state) */
 interface GameHandlers {
   onArrive: (room: string) => void;
@@ -211,9 +153,14 @@ interface GameHandlers {
 const noop = () => {};
 
 interface CrateState {
+  /** what's on show: the crate's records that still have a copy to claim */
   shelf: Shelf;
   idx: number;
+  /** the whole crate, to re-filter from as copies go */
+  source: Shelf;
 }
+
+
 
 const EMPTY_NP: PlayerState = {
   track: null,
@@ -240,6 +187,7 @@ export default function Bar({
   member = null,
   invite = null,
   owner = false,
+  copies: initialCopies = null,
 }: {
   initialShelves: Shelf[];
   /** the returning member's number (from the signed cookie), for the door */
@@ -248,11 +196,28 @@ export default function Bar({
   invite?: { from: number | null; claim: number | null } | null;
   /** a verified /booth session: adds records straight to crates */
   owner?: boolean;
+  /** collectible copies still in crates, by track (null = collecting closed) */
+  copies?: Availability | null;
 }) {
   // ----- library: seeded server-side from Supabase (see lib/bar/data.ts) -----
   const [shelves, setShelves] = useState<Shelf[]>(initialShelves);
   const shelvesRef = useRef(shelves);
   shelvesRef.current = shelves;
+  // ----- collectibles (lib/collection): copies left in crates + your backpack.
+  // The server is the truth; live "copy" events and refetches keep this close.
+  const [copies, setCopies] = useState<Availability | null>(initialCopies);
+  const copiesRef = useRef(copies);
+  copiesRef.current = copies;
+  const [backpack, setBackpack] = useState<BackpackState | null>(null);
+  const backpackRef = useRef(backpack);
+  backpackRef.current = backpack;
+  const [backpackOpen, setBackpackOpen] = useState(false);
+  const openCrateRef = useRef<(shelf: Shelf) => void>(() => {});
+  const refreshBackpack = useCallback(() => {
+    void myBackpack()
+      .then((b) => setBackpack(b))
+      .catch(() => {});
+  }, []);
 
   // ----- UI state -----
   const [started, setStarted] = useState(false);
@@ -301,6 +266,8 @@ export default function Bar({
   const [prompt, setPrompt] = useState<string | null>(null);
   const [np, setNp] = useState<PlayerState>(EMPTY_NP);
   const [crate, setCrate] = useState<CrateState | null>(null);
+  const crateRef = useRef(crate);
+  crateRef.current = crate;
   const [ingestOpen, setIngestOpen] = useState(false);
   const [chatOpen, setChatOpen] = useState(false); // touch: chat behind a 💬 toggle
   const [menuOpen, setMenuOpen] = useState(false); // touch: topbar pills behind ☰
@@ -392,7 +359,8 @@ export default function Bar({
     deckOpen ||
     swap !== null ||
     settingsOpen ||
-    profileOffer;
+    profileOffer ||
+    backpackOpen;
   const giftShowing = !giftBlocked && giftQueue.length > 0 ? giftQueue[0] : null;
   const giftShowingRef = useRef(false);
   giftShowingRef.current = giftShowing !== null;
@@ -417,7 +385,8 @@ export default function Bar({
     deckOpen ||
     swap !== null ||
     settingsOpen ||
-    profileOffer;
+    profileOffer ||
+    backpackOpen;
   const typingRef = useRef(false);
 
   // ----- dom + instance refs -----
@@ -508,7 +477,7 @@ export default function Bar({
       callbacks: {
         onPrompt: (html) => setPrompt(html),
         onBrowseShelf: (shelf) => {
-          if (shelf.records.length) setCrate({ shelf, idx: 0 });
+          if (shelf.records.length) openCrateRef.current(shelf);
           // an empty curated crate is being stocked by Sombra — not a paste box
           else if (shelf.slug && CURATED_CRATES.has(shelf.slug))
             gameRef.current.toast(`${shelf.label.replace(/·.*/, "").trim()} is being curated — check back soon`);
@@ -561,6 +530,7 @@ export default function Bar({
           setSwap(null);
           setSettingsOpen(false);
           setProfileOffer(false);
+          setBackpackOpen(false);
           setNav(null);
         },
         isOverlayOpen: () => overlayOpenRef.current,
@@ -704,6 +674,8 @@ export default function Bar({
       },
       // auto-radio opener for a brand-new room — a phase-appropriate cut for the
       // current hour (energy-weighted; replaces the old hardcoded opener list)
+      // someone (anyone) claimed a copy: it leaves every crate, live
+      onCopyClaimed: (copyId, trackKey) => setCopies((a) => dropCopy(a, copyId, trackKey)),
       openRoom: () => {
         // the intro tap may have pre-picked (and already started) the opener
         if (pendingOpenRef.current) {
@@ -1220,7 +1192,14 @@ export default function Bar({
         return;
       }
       const blocked =
-        crate !== null || ingestOpen || dialogue !== null || fitOpen || deckOpen || swap !== null || settingsOpen || profileOffer;
+        crate !== null ||
+        ingestOpen ||
+        dialogue !== null ||
+        fitOpen ||
+        deckOpen ||
+        swap !== null ||
+        settingsOpen ||
+        profileOffer;
       if (k === "m" && !blocked) {
         setDexOpen(false);
         setMapOpen((o) => !o);
@@ -1229,6 +1208,10 @@ export default function Bar({
         setDexOpen((o) => !o);
       } else if (k === "r" && !blocked && !dexOpen && !mapOpen) {
         wander();
+      } else if (k === "b" && !blocked) {
+        setMapOpen(false);
+        setDexOpen(false);
+        setBackpackOpen((o) => !o);
       }
     };
     addEventListener("keydown", onEsc, true); // before the engine's handler
@@ -1355,13 +1338,13 @@ export default function Bar({
     location.reload();
   }, []);
 
-  /** put one of your records on the deck: it cues for the room, and it's the
-   *  orientation's second step */
-  const placeOnDeck = useCallback(
+  /** Rio's step 2: a saved record gets a practice spin on the deck. It plays
+   *  just for you (a preview, like a crate's) and counts for the step, but it
+   *  never reaches the room's queue: only a copy you hold can. */
+  const practiceSpin = useCallback(
     (key: string) => {
       const e = getProgress().dug[key];
       if (!e) return;
-      // the catalog copy (it carries the duration + id the queue wants), else the save's
       let track: Track = { title: e.title, artist: e.artist, ytId: e.ytId, scUrl: e.scUrl, id: e.id };
       for (const s of shelvesRef.current) {
         const hit = s.records.find((t) => recordKey(t) === key);
@@ -1370,24 +1353,12 @@ export default function Bar({
           break;
         }
       }
-      const p = presenceRef.current;
-      const cued = !!p && p.canCue();
-      if (cued) {
-        p!.cue(track);
-        refreshFlowUi();
-      }
+      playerRef.current?.startPreview(track, previewStart(track));
       setDeckOpen(false);
-      if (advanceQuest(FIRST_RECORD.id, 1)) {
-        // counted even when the queue is full: the newcomer did the thing
-        toast(
-          cued ? "▶ On the deck. Rio heard that. Go see Rio." : "The deck's queue is full, but Rio saw you try. Go see Rio.",
-          "gold",
-          5600
-        );
-      } else if (cued) toast(`▶ Up next for the whole room: ${track.title}`, "green", 3600);
-      else toast("The deck's queue is full right now. Try again in a bit.", "plain", 3600);
+      if (advanceQuest(FIRST_RECORD.id, 1))
+        toast("◐ A practice spin, just for you. Rio saw you at the deck. Go see Rio.", "gold", 5600);
     },
-    [toast, refreshFlowUi]
+    [toast]
   );
 
   // the arrival sign fades itself out
@@ -1433,30 +1404,107 @@ export default function Bar({
       ),
     []
   );
-  // selecting a record CUES it for the whole room (plays next), subject to the
-  // per-user cue cap (host-enforced). One record at a time — no whole-shelf cue.
-  const cueFromCrate = useCallback(
-    (idx: number) => {
-      const p = presenceRef.current;
-      if (!crate || !p || !p.canCue()) return;
-      const r = crate.shelf.records[idx];
-      p.cue(r);
-      gameRef.current.toast(`⤵ Up next for the whole room: ${r.title}`, "green", 3600);
-      // cueing a record keeps it in your dex (if there's a free slot)
-      if (keep(r, crate.shelf)?.firstKeep) giftRef.current({ kind: "keep" });
-      refreshFlowUi();
+  // ----- collectibles: claim a copy from a crate; queue a copy you hold -----
+  /** the server's fresh word on the tracks in a crate (heals missed events) */
+  const refreshCrateCopies = useCallback((shelf: Shelf) => {
+    if (!copiesRef.current) return; // collecting closed: nothing to refresh
+    const keys = shelf.records.map((t) => t.trackKey).filter((k): k is string => !!k);
+    if (!keys.length) return;
+    void crateCopies(keys)
+      .then((fresh) => setCopies((a) => mergeAvailability(a, fresh)))
+      .catch(() => {});
+  }, []);
+  // a crate shows only the records that still have a copy to claim
+  openCrateRef.current = (shelf: Shelf) => {
+    const shown = claimableRecords(shelf.records, copiesRef.current);
+    if (!shown.length) {
+      gameRef.current.toast("Every copy in this crate has been claimed. Sombra Radio still plays them.", "plain", 4600);
+      return;
+    }
+    setCrate({ shelf: { ...shelf, records: shown }, idx: 0, source: shelf });
+    refreshCrateCopies(shelf);
+  };
+  // copies come and go while a crate is open: keep what's on show in step
+  useEffect(() => {
+    const c = crateRef.current;
+    if (!c) return;
+    const shown = claimableRecords(c.source.records, copies);
+    const sig = (rs: Track[]) => rs.map(recordKey).join("|");
+    if (sig(shown) === sig(c.shelf.records)) return;
+    if (!shown.length) {
       setCrate(null);
+      gameRef.current.toast("That was the last copy in this crate.", "plain", 4200);
+      return;
+    }
+    const cur = recordKey(c.shelf.records[c.idx]);
+    const at = shown.findIndex((t) => recordKey(t) === cur);
+    setCrate({ ...c, shelf: { ...c.source, records: shown }, idx: at >= 0 ? at : Math.min(c.idx, shown.length - 1) });
+  }, [copies]);
+  // your backpack: once you're a member, and again whenever you come back to
+  // the tab (another device or a reconnect may have changed things)
+  useEffect(() => {
+    if (memberNo) refreshBackpack();
+  }, [memberNo, refreshBackpack]);
+  // and fresh each time the backpack (or the deck, which lists it) opens
+  useEffect(() => {
+    if (backpackOpen || deckOpen) refreshBackpack();
+  }, [backpackOpen, deckOpen, refreshBackpack]);
+  useEffect(() => {
+    const back = () => {
+      if (document.visibilityState !== "visible") return;
+      refreshBackpack();
+      if (crateRef.current) refreshCrateCopies(crateRef.current.source);
+    };
+    addEventListener("focus", back);
+    document.addEventListener("visibilitychange", back);
+    return () => {
+      removeEventListener("focus", back);
+      document.removeEventListener("visibilitychange", back);
+    };
+  }, [refreshBackpack, refreshCrateCopies]);
+
+  /** ◆ claim the lowest copy left of a record (only one claim of a copy wins) */
+  const claimFromCrate = useCallback(
+    async (t: Track) => {
+      const btn = claimButton(t, copiesRef.current, backpackRef.current);
+      if (!btn?.copyId || btn.disabled || !t.trackKey) return;
+      const copyId = btn.copyId;
+      const serial = copiesRef.current?.[t.trackKey]?.find((c) => c.id === copyId)?.serial;
+      const res = await claimCopy(copyId).catch(() => ({ result: "closed" as const, backpack: undefined }));
+      if (res.backpack) setBackpack(res.backpack);
+      if (res.result === "ok") {
+        setCopies((a) => dropCopy(a, copyId, t.trackKey!));
+        const n = res.backpack ? `${res.backpack.copies.length}/${res.backpack.cap}` : "";
+        toast(`◆ Copy #${serial ?? "?"} of ${COPIES_PER_TRACK} is yours · ${n}. Put it on from your backpack (B).`, "gold", 5600);
+      } else if (res.result === "gone") {
+        toast("Someone just claimed that copy.", "plain", 3600);
+        if (crateRef.current) refreshCrateCopies(crateRef.current.source);
+      } else if (res.result === "owned") toast("You already hold a copy of this one.", "plain", 3600);
+      else if (res.result === "full") toast("Your backpack is full.", "plain", 3600);
+      else toast("Collecting isn't open right now. Try again in a bit.", "plain", 3600);
     },
-    [crate, refreshFlowUi, keep]
+    [toast, refreshCrateCopies]
   );
-  const cueTrack = useCallback(
-    (t: Track) => {
+
+  /** ▶ put a copy you hold on the room's queue: the server signs a ticket for
+   *  it, and the host only queues what carries one */
+  const queueCopy = useCallback(
+    async (copy: OwnedCopy) => {
       const p = presenceRef.current;
       if (!p || !p.canCue()) return;
-      p.cue(t);
+      const r = await requestCue(copy.id, p.id).catch(() => ({ error: "closed" as const }));
+      if ("error" in r) {
+        toast(r.error === "not_yours" ? "That copy isn't in your backpack anymore." : "Couldn't put that on right now.", "plain", 3600);
+        refreshBackpack();
+        return;
+      }
+      p.cue(r.track, r.ticket);
       refreshFlowUi();
+      setDeckOpen(false);
+      setBackpackOpen(false);
+      toast(`▶ Up next for the whole room: ${copy.title}`, "green", 3600);
     },
-    [refreshFlowUi]
+    [toast, refreshFlowUi, refreshBackpack]
   );
   const uncue = useCallback(
     (key: string) => {
@@ -1526,6 +1574,9 @@ export default function Bar({
           <div className="navHint">Dig: walk up to any crate and hear 30s of each record.</div>
           <button className="navAct" onClick={go(() => { setMapOpen(false); setDexOpen(true); setUnseenGifts(0); })}>
             My crate <span>{saved} saved · C</span>
+          </button>
+          <button className="navAct" onClick={go(() => { setMapOpen(false); setDexOpen(false); setBackpackOpen(true); })}>
+            Backpack <span>{backpack ? `${backpack.copies.length}/${backpack.cap} copies` : "your copies"} · B</span>
           </button>
           <button className="navAct" onClick={go(() => { setDexOpen(false); setMapOpen(true); })}>
             Map of the realms <span>M</span>
@@ -1720,13 +1771,13 @@ export default function Bar({
       {crate && (
         <Crate
           crate={crate}
-          flow={flowUi}
-          solo={soloMode}
           dug={progress.dug}
           onClose={() => setCrate(null)}
           onFlip={flip}
           onPick={(i) => setCrate((c) => (c ? { ...c, idx: i } : c))}
-          onPlay={() => cueFromCrate(crate.idx)}
+          claimFor={(t) => claimButton(t, copies, backpack)}
+          copiesLeft={(t) => copiesLeft(t, copies)}
+          onClaim={(t) => void claimFromCrate(t)}
           slots={`${Object.keys(progress.dug).length}/${slotCap(progress)}`}
           paused={swap !== null}
           onKeep={(t) => {
@@ -1755,11 +1806,26 @@ export default function Bar({
       )}
       {deckOpen && (
         <DeckPanel
-          rows={crateRows(progress.dug)}
+          copies={backpack?.copies ?? null}
+          practice={(() => {
+            const q = questPhase(FIRST_RECORD.id, progress);
+            return q.phase === "active" && q.step === 1 ? crateRows(progress.dug) : [];
+          })()}
           nowPlaying={np.track ? `${np.track.artist ? `${np.track.artist} — ` : ""}${np.track.title}` : null}
           status={soloMode ? "Just you in here: it plays right away." : cueLabel(flowUi, false, "Your cues")}
-          onPlace={placeOnDeck}
+          canQueue={flowUi.canCue}
+          onQueue={(c) => void queueCopy(c)}
+          onPractice={practiceSpin}
           onClose={() => setDeckOpen(false)}
+        />
+      )}
+      {backpackOpen && (
+        <Backpack
+          backpack={backpack}
+          canQueue={flowUi.canCue}
+          status={soloMode ? "Just you in here: it plays right away." : cueLabel(flowUi, false, "Your cues")}
+          onQueue={(c) => void queueCopy(c)}
+          onClose={() => setBackpackOpen(false)}
         />
       )}
 
@@ -1846,9 +1912,6 @@ export default function Bar({
           progress={progress}
           shelves={shelves}
           room={room}
-          flow={flowUi}
-          solo={soloMode}
-          onCue={cueTrack}
           onClose={() => {
             setDexOpen(false);
             setDexTab(undefined);
@@ -1894,8 +1957,6 @@ export default function Bar({
         <AddedBoard
           rows={added}
           onClose={() => setAddedOpen(false)}
-          onCue={cueTrack}
-          canCue={flowUi.canCue}
         />
       )}
 
@@ -2087,6 +2148,7 @@ function HelpContent() {
         <span><kbd>E</kbd> use</span>
         <span><kbd>M</kbd> map</span>
         <span><kbd>C</kbd> my crate</span>
+        <span><kbd>B</kbd> backpack</span>
         <span><kbd>R</kbd> wander</span>
         <span><kbd>V</kbd> camera</span>
         <span><kbd>Space</kbd> jump</span>
@@ -2781,25 +2843,27 @@ function NowPlaying({
 /* ------------------------------------------------------------ crate flip */
 function Crate({
   crate,
-  flow,
-  solo,
   dug,
   onClose,
   onFlip,
   onPick,
-  onPlay,
+  claimFor,
+  copiesLeft,
+  onClaim,
   onKeep,
   slots,
   paused,
 }: {
   crate: CrateState;
-  flow: FlowUi;
-  solo: boolean;
   dug: ReturnType<typeof getProgress>["dug"];
   onClose: () => void;
   onFlip: (d: number) => void;
   onPick: (idx: number) => void;
-  onPlay: () => void;
+  /** the ◆ claim button for this record, or null while collecting is closed */
+  claimFor: (t: Track) => ClaimButton | null;
+  /** copies of this record still in crates (null = unknown) */
+  copiesLeft: (t: Track) => number | null;
+  onClaim: (t: Track) => void;
   /** false = not kept (the crate is full; the host offers a swap) */
   onKeep: (t: Track) => boolean;
   /** "3/10" — your crate's slots */
@@ -2808,8 +2872,9 @@ function Crate({
   paused: boolean;
 }) {
   // The back of the record: the whole tracklist at once (Side A / Side B),
-  // play counts, ↑/↓ to move, ↵ to cue, K to keep. The selected record
-  // previews just for you (the room plays on).
+  // play counts, ↑/↓ to move, K to keep. The selected record previews just
+  // for you (the room plays on). Nothing here reaches the room's queue: a
+  // track goes on it only from your backpack, as a copy you've claimed.
   const { shelf, idx } = crate;
   const rec = shelf.records[idx];
   const kept = dug[recordKey(rec)];
@@ -2823,23 +2888,21 @@ function Crate({
   useEffect(() => {
     listRef.current?.querySelector<HTMLElement>(`[data-i="${idx}"]`)?.scrollIntoView({ block: "nearest" });
   }, [idx]);
-  const atCap = !flow.canCue;
+  const claim = claimFor(rec);
   const keepIt = () => {
     if (kept) return;
     if (onKeep(rec)) setCaught(recordKey(rec));
   };
   // keyboard: the list owns the arrows while the crate is open
-  const keysRef = useRef({ onFlip, onPlay, keepIt, atCap, paused });
-  keysRef.current = { onFlip, onPlay, keepIt, atCap, paused };
+  const keysRef = useRef({ onFlip, keepIt, paused });
+  keysRef.current = { onFlip, keepIt, paused };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const k = keysRef.current;
       if (k.paused) return;
       if (e.key === "ArrowDown" || e.key === "ArrowRight") k.onFlip(1);
       else if (e.key === "ArrowUp" || e.key === "ArrowLeft") k.onFlip(-1);
-      else if (e.key === "Enter") {
-        if (!k.atCap) k.onPlay();
-      } else if (e.key.toLowerCase() === "k") k.keepIt();
+      else if (e.key.toLowerCase() === "k") k.keepIt();
       else return;
       e.preventDefault();
       e.stopPropagation();
@@ -2850,14 +2913,6 @@ function Crate({
 
   const col = shelf.color;
   const big = (rec.artist || rec.title).split(/[\s&]/)[0].toUpperCase();
-  const waitSec = Math.ceil(flow.cueWaitLeft / 1000);
-  const cueLabel = solo
-    ? "⤵ PLAY NEXT FOR THE ROOM"
-    : waitSec > 0
-    ? `⤵ wait ${waitSec}s to cue`
-    : atCap
-    ? "wait for one to play"
-    : `⤵ PLAY NEXT (${flow.myCue}/${flow.cueCap})`;
   const n = shelf.records.length;
   const sideB = Math.ceil(n / 2); // first index on Side B
   const pos = (i: number) => (i < sideB ? `A${i + 1}` : `B${i - sideB + 1}`);
@@ -2902,9 +2957,11 @@ function Crate({
               {pos(idx)} · played {rec.plays ?? 0} {(rec.plays ?? 0) === 1 ? "time" : "times"}
               {rec.durationSeconds ? ` · ${fmtLen(rec.durationSeconds)}` : ""}
             </div>
-            <button id="playBtn" onClick={onPlay} disabled={atCap}>
-              {cueLabel}
-            </button>
+            {claim && (
+              <button id="claimBtn" onClick={() => onClaim(rec)} disabled={claim.disabled} title={claim.hint}>
+                {claim.label}
+              </button>
+            )}
             <button
               id="keepBtn"
               className={kept ? "kept" : ""}
@@ -2929,7 +2986,8 @@ function Crate({
                   <span className="rbTrack">
                     <b>{t.artist || "—"}</b> {t.title}
                   </span>
-                  <span className="rbPlays" title="times played in the room">
+                  <span className="rbPlays" title="copies left · times played in the room">
+                    {copiesLeft(t) !== null ? `◆${copiesLeft(t)} ` : ""}
                     {dug[recordKey(t)] ? "✦ " : ""}▶ {t.plays ?? 0}
                   </span>
                   <span className="rbLen">{t.durationSeconds ? fmtLen(t.durationSeconds) : ""}</span>
@@ -2939,7 +2997,7 @@ function Crate({
           </ol>
         </div>
         <footer className="rbFoot">
-          <span className="deskOnly">↑ ↓ dig · ↵ play next · K save · </span>▶ plays in the room · ✦ in your crate
+          <span className="deskOnly">↑ ↓ dig · K save · </span>◆ copies left to claim · ▶ plays in the room · ✦ in your crate
         </footer>
       </div>
     </div>
@@ -3145,13 +3203,9 @@ function Ingest({
 function AddedBoard({
   rows,
   onClose,
-  onCue,
-  canCue,
 }: {
   rows: AddedRow[];
   onClose: () => void;
-  onCue: (t: Track) => void;
-  canCue: boolean;
 }) {
   return (
     <div id="addedDrawer">
@@ -3177,22 +3231,6 @@ function AddedBoard({
                 </div>
                 <div className="addedAgo">{ago(r.at)}</div>
               </div>
-              <button
-                className="addedCue"
-                disabled={!canCue}
-                title={canCue ? "cue this for the room" : "wait for one to play"}
-                onClick={() =>
-                  onCue({
-                    title: r.title,
-                    artist: r.artist,
-                    ytId: r.ytId,
-                    scUrl: r.scUrl,
-                    id: r.id,
-                  })
-                }
-              >
-                ⤵ cue
-              </button>
             </div>
           ))}
         </div>

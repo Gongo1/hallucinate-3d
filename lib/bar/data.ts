@@ -27,6 +27,7 @@ interface RecordRow {
   sort: number;
   duration_seconds: number | null;
   play_count?: number | null;
+  track_key?: string | null;
 }
 interface ShelfRow {
   id: string;
@@ -49,6 +50,7 @@ function toTrack(r: RecordRow): Track {
     scUrl: r.sc_url ?? undefined,
     durationSeconds: r.duration_seconds,
     plays: r.play_count ?? 0,
+    trackKey: r.track_key ?? undefined,
   };
 }
 
@@ -62,9 +64,11 @@ export async function loadShelves(): Promise<Shelf[]> {
       .order("is_ingest", { ascending: true })
       .order("sort", { ascending: true });
   const base = "id, title, artist, yt_id, sc_url, sort, duration_seconds";
-  let { data, error } = await query(`${base}, play_count`);
-  // play counts arrive with a migration (20260930c): until it has run, load
-  // the library without them rather than taking the bar down
+  let { data, error } = await query(`${base}, play_count, track_key`);
+  // play counts + track keys arrive with migrations (20260930c, 20261004):
+  // until they've run, load the library without them rather than taking the
+  // bar down (no track keys = collecting stays closed)
+  if (error && /track_key/.test(error.message)) ({ data, error } = await query(`${base}, play_count`));
   if (error && /play_count/.test(error.message)) ({ data, error } = await query(base));
   if (error) throw new Error(`loadShelves: ${error.message}`);
 

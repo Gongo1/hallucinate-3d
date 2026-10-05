@@ -92,6 +92,7 @@ export async function foldMember(fromId: string, toId: string): Promise<void> {
   if (!sb || fromId === toId) return;
   const { data: from } = await sb.from("hallu_members").select("number").eq("id", fromId).maybeSingle();
   if (!from || (from.number as number) <= 2) return; // never fold a founding number away
+  await sb.rpc("hallu_fold_copies", { p_from: fromId, p_to: toId }); // collectibles come along
   await sb.from("hallu_events").update({ member_id: toId }).eq("member_id", fromId);
   await sb.from("sombra_list").update({ member_id: toId }).eq("member_id", fromId);
   await sb.from("hallu_keys").delete().eq("owner_id", fromId).is("redeemed_by", null);
