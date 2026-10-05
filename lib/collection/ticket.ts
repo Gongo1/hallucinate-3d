@@ -1,7 +1,8 @@
 // SIGNED TICKETS — how the room's host (a browser) knows a request really came
 // from the server. Anyone holding the page's public key can broadcast on the
 // bar channel, so the host only obeys what the server signed:
-//   • cue   — "this member holds this copy": the only way onto the room queue
+//   • cue   — "this member holds this copy" (or "this is a house record"):
+//             the only way onto the room queue
 //   • admin — a god-mode command from the verified owner (/booth)
 //   • copy  — "this copy was just claimed": crates drop it live
 // The server signs with an ECDSA P-256 private key (TICKET_SIGNING_KEY, server
@@ -29,6 +30,7 @@ interface Base {
   /** one-time nonce */
   n: string;
 }
+/** `copy` is the copy id, or "house" for a house record (no copy needed) */
 export type CueTicket = Base & { k: "cue"; copy: string; by: string; track: TicketTrack };
 export type AdminTicket = Base & { k: "admin"; cmd: AdminCmd };
 export type CopyTicket = Base & { k: "copy"; copy: string; track: string };

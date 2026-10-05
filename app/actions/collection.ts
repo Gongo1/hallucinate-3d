@@ -3,12 +3,13 @@
 import { currentMemberId } from "@/lib/members/auth";
 import { serverBroadcast } from "@/lib/booth/broadcast";
 import { STARTER_CAPACITY, type Availability, type ClaimResult, type OwnedCopy } from "@/lib/collection/rules";
-import { backpackOf, claim, cueTrackFor, loadAvailability } from "@/lib/collection/store";
+import { backpackOf, claim, copyTrackKey, cueTrackFor, houseCueTrack, isHouseTrack, loadAvailability } from "@/lib/collection/store";
 import { signTicket } from "@/lib/collection/sign";
 import type { TicketTrack } from "@/lib/collection/ticket";
 
 // Collectible copies: claim one from a crate, see your backpack, and get a
-// signed ticket to put a copy you hold on the room's queue. Who you are comes
+// signed ticket to put a copy you hold on the room's queue. House records
+// (lib/collection/rules.ts) can't be claimed; any member gets a ticket for one. Who you are comes
 // only from the signed member cookie; the client never names a member.
 
 /** the Realtime event a claim announces (crates drop the copy live) */
@@ -33,6 +34,8 @@ export async function crateCopies(trackKeys: string[]): Promise<Availability | n
 export async function claimCopy(copyId: string): Promise<{ result: ClaimResult; backpack?: Backpack }> {
   const me = await currentMemberId();
   if (!me || typeof copyId !== "string" || !/^[0-9a-f-]{36}$/.test(copyId)) return { result: "no_member" };
+  const key = await copyTrackKey(copyId);
+  if (key && (await isHouseTrack(key))) return { result: "house" };
   const { result, trackKey } = await claim(me, copyId, STARTER_CAPACITY);
   if (result === "ok" && trackKey) {
     const token = signTicket({ k: "copy", copy: copyId, track: trackKey });
@@ -53,5 +56,19 @@ export async function requestCue(
   const track = await cueTrackFor(me, copyId);
   if (!track) return { error: "not_yours" };
   const ticket = signTicket({ k: "cue", copy: copyId, by: presenceId, track });
+  return ticket ? { ticket, track } : { error: "closed" };
+}
+
+/** A signed cue ticket for a house record: no copy needed, only a member. */
+export async function requestHouseCue(
+  trackKey: string,
+  presenceId: string
+): Promise<{ ticket: string; track: TicketTrack } | { error: "not_house" | "closed" }> {
+  const me = await currentMemberId();
+  if (!me || typeof trackKey !== "string" || trackKey.length > 600 || typeof presenceId !== "string" || presenceId.length > 64)
+    return { error: "closed" };
+  const track = await houseCueTrack(trackKey);
+  if (!track) return { error: "not_house" };
+  const ticket = signTicket({ k: "cue", copy: "house", by: presenceId, track });
   return ticket ? { ticket, track } : { error: "closed" };
 }

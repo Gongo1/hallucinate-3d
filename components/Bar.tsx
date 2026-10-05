@@ -80,10 +80,12 @@ import { Dialogue } from "@/components/game/Dialogue";
 import { DeckPanel, QuestTracker, SwapPanel, crateRows } from "@/components/game/Quest";
 import { ProfileCard, Settings } from "@/components/game/Settings";
 import { confirmProfile, myProfile, saveProfileProgress, type MyProfile } from "@/app/actions/profile";
-import { claimCopy, crateCopies, myBackpack, requestCue, type Backpack as BackpackState } from "@/app/actions/collection";
+import { claimCopy, crateCopies, myBackpack, requestCue, requestHouseCue, type Backpack as BackpackState } from "@/app/actions/collection";
 import { Backpack } from "@/components/game/Backpack";
-import { COPIES_PER_TRACK, type Availability, type OwnedCopy } from "@/lib/collection/rules";
-import { claimButton, claimableRecords, copiesLeft, dropCopy, mergeAvailability, type ClaimButton } from "@/lib/collection/crate";
+import { COPIES_PER_TRACK, STARTER_CAPACITY, type Availability, type OwnedCopy } from "@/lib/collection/rules";
+import { claimButton, claimableRecords, copiesLeft, dropCopy, houseKeys, mergeAvailability, type ClaimButton } from "@/lib/collection/crate";
+import { copyTrack, sourceCrate, type RoomView } from "@/lib/collection/backpack";
+import { HUB_ROOM, ROOMS } from "@/lib/bar/rooms";
 import { Dex, STASH } from "@/components/game/Dex";
 import { GiftCard, type GiftItem } from "@/components/game/GiftCard";
 import { WorldMap } from "@/components/game/WorldMap";
@@ -212,6 +214,18 @@ export default function Bar({
   const backpackRef = useRef(backpack);
   backpackRef.current = backpack;
   const [backpackOpen, setBackpackOpen] = useState(false);
+  const backpackOpenRef = useRef(backpackOpen);
+  backpackOpenRef.current = backpackOpen;
+  // the copy the Backpack points at when it opens (one you just claimed)
+  const [bagHighlight, setBagHighlight] = useState<string | null>(null);
+  // a claim just landed: the crate offers "Open Backpack" / "Keep digging"
+  const [justClaimed, setJustClaimed] = useState<{ copyId: string; serial: number | null } | null>(null);
+  // the one-time "your records live in the Backpack" cue (BAG_HINT_KEY)
+  const [bagHint, setBagHint] = useState(false);
+  // house records (the Gongo crate, the Selection): never claimed, anyone plays
+  const houseSet = useMemo(() => houseKeys(shelves), [shelves]);
+  const houseRef = useRef(houseSet);
+  houseRef.current = houseSet;
   const openCrateRef = useRef<(shelf: Shelf) => void>(() => {});
   const refreshBackpack = useCallback(() => {
     void myBackpack()
@@ -1171,7 +1185,20 @@ export default function Bar({
     if (id) toast("🎲 wandering…", "plain", 1800);
   }, [toast]);
 
-  // hotkeys: M map · C crate dex · R wander · Enter pages a keeper. Never while
+  /** the Backpack, from anywhere (nav, C/B, a claim), optionally pointing at a copy */
+  const openBackpack = useCallback((highlight: string | null = null) => {
+    setMapOpen(false);
+    setDexOpen(false);
+    setCrate(null);
+    setBagHighlight(highlight);
+    setBackpackOpen(true);
+  }, []);
+  const toggleBackpack = useCallback(() => {
+    if (backpackOpenRef.current) setBackpackOpen(false);
+    else openBackpack();
+  }, [openBackpack]);
+  // hotkeys: M map · C/B backpack · K my crate (dex) · R wander · Enter pages a
+  // keeper. Never while
   // typing in chat, and only over the game's own overlays.
   useEffect(() => {
     const onEsc = (e: KeyboardEvent) => {
@@ -1182,7 +1209,7 @@ export default function Bar({
     const onKey = (e: KeyboardEvent) => {
       if (typingRef.current || !startedRef.current) return;
       // typing in any field (the drop box, the list card, a shelf name) must
-      // never fire M / C / R — an "r" in a link used to wander you off
+      // never fire M / C / K / R — an "r" in a link used to wander you off
       const el = e.target as HTMLElement | null;
       if (el && (el.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName))) return;
       const k = e.key.toLowerCase();
@@ -1203,15 +1230,16 @@ export default function Bar({
       if (k === "m" && !blocked) {
         setDexOpen(false);
         setMapOpen((o) => !o);
-      } else if (k === "c" && !blocked) {
+      } else if ((k === "c" || k === "b") && !blocked) {
+        // C (and B, the old key) open the Backpack: the records you hold
+        toggleBackpack();
+      } else if (k === "k" && !blocked) {
+        // K opens My crate (your ✦ saves), like K saves inside a crate
         setMapOpen(false);
+        setBackpackOpen(false);
         setDexOpen((o) => !o);
       } else if (k === "r" && !blocked && !dexOpen && !mapOpen) {
         wander();
-      } else if (k === "b" && !blocked) {
-        setMapOpen(false);
-        setDexOpen(false);
-        setBackpackOpen((o) => !o);
       }
     };
     addEventListener("keydown", onEsc, true); // before the engine's handler
@@ -1220,7 +1248,7 @@ export default function Bar({
       removeEventListener("keydown", onEsc, true);
       removeEventListener("keydown", onKey);
     };
-  }, [crate, ingestOpen, dialogue, fitOpen, dexOpen, mapOpen, wander, deckOpen, swap, settingsOpen, profileOffer]);
+  }, [crate, ingestOpen, dialogue, fitOpen, dexOpen, mapOpen, wander, deckOpen, swap, settingsOpen, profileOffer, toggleBackpack]);
 
   // the mission gates the doors and Rio's "!" — keep the engine in step with the save
   useEffect(() => {
@@ -1416,7 +1444,7 @@ export default function Bar({
   }, []);
   // a crate shows only the records that still have a copy to claim
   openCrateRef.current = (shelf: Shelf) => {
-    const shown = claimableRecords(shelf.records, copiesRef.current);
+    const shown = claimableRecords(shelf.records, copiesRef.current, houseRef.current);
     if (!shown.length) {
       gameRef.current.toast("Every copy in this crate has been claimed. Sombra Radio still plays them.", "plain", 4600);
       return;
@@ -1428,7 +1456,7 @@ export default function Bar({
   useEffect(() => {
     const c = crateRef.current;
     if (!c) return;
-    const shown = claimableRecords(c.source.records, copies);
+    const shown = claimableRecords(c.source.records, copies, houseRef.current);
     const sig = (rs: Track[]) => rs.map(recordKey).join("|");
     if (sig(shown) === sig(c.shelf.records)) return;
     if (!shown.length) {
@@ -1449,6 +1477,35 @@ export default function Bar({
   useEffect(() => {
     if (backpackOpen || deckOpen) refreshBackpack();
   }, [backpackOpen, deckOpen, refreshBackpack]);
+  // the one-time cue: once you own a copy (or have saves, now on K), point at
+  // the Backpack until you've opened it once
+  const hasSaves = Object.keys(progress.dug).length > 0;
+  useEffect(() => {
+    if (!started || !backpack || backpackOpen) return;
+    if (!backpack.copies.length && !hasSaves) return;
+    let seen = true;
+    try {
+      seen = localStorage.getItem(BAG_HINT_KEY) === "1";
+    } catch {}
+    if (!seen) setBagHint(true);
+  }, [started, backpack, backpackOpen, hasSaves]);
+  useEffect(() => {
+    if (!backpackOpen) return;
+    setBagHint(false);
+    try {
+      localStorage.setItem(BAG_HINT_KEY, "1");
+    } catch {}
+  }, [backpackOpen]);
+  const dismissBagHint = useCallback(() => {
+    setBagHint(false);
+    try {
+      localStorage.setItem(BAG_HINT_KEY, "1");
+    } catch {}
+  }, []);
+  // the claim confirmation belongs to the crate it happened in
+  useEffect(() => {
+    if (!crate) setJustClaimed(null);
+  }, [crate]);
   useEffect(() => {
     const back = () => {
       if (document.visibilityState !== "visible") return;
@@ -1466,7 +1523,7 @@ export default function Bar({
   /** ◆ claim the lowest copy left of a record (only one claim of a copy wins) */
   const claimFromCrate = useCallback(
     async (t: Track) => {
-      const btn = claimButton(t, copiesRef.current, backpackRef.current);
+      const btn = claimButton(t, copiesRef.current, backpackRef.current, houseRef.current);
       if (!btn?.copyId || btn.disabled || !t.trackKey) return;
       const copyId = btn.copyId;
       const serial = copiesRef.current?.[t.trackKey]?.find((c) => c.id === copyId)?.serial;
@@ -1474,9 +1531,8 @@ export default function Bar({
       if (res.backpack) setBackpack(res.backpack);
       if (res.result === "ok") {
         setCopies((a) => dropCopy(a, copyId, t.trackKey!));
-        const n = res.backpack ? `${res.backpack.copies.length}/${res.backpack.cap}` : "";
-        toast(`◆ Copy #${serial ?? "?"} of ${COPIES_PER_TRACK} is yours · ${n}. Put it on from your backpack (B).`, "gold", 5600);
-      } else if (res.result === "gone") {
+        setJustClaimed({ copyId, serial: serial ?? null });
+      } else if (res.result === "house") toast("That's a house record: nobody claims it, anyone can put it on.", "plain", 4200); else if (res.result === "gone") {
         toast("Someone just claimed that copy.", "plain", 3600);
         if (crateRef.current) refreshCrateCopies(crateRef.current.source);
       } else if (res.result === "owned") toast("You already hold a copy of this one.", "plain", 3600);
@@ -1505,6 +1561,23 @@ export default function Bar({
       toast(`▶ Up next for the whole room: ${copy.title}`, "green", 3600);
     },
     [toast, refreshFlowUi, refreshBackpack]
+  );
+  /** ▶ put a house record on (the Gongo crate, the Selection): no copy needed,
+   *  but the server still signs the ticket */
+  const queueHouse = useCallback(
+    async (t: Track) => {
+      const p = presenceRef.current;
+      if (!p || !p.canCue() || !t.trackKey) return;
+      const r = await requestHouseCue(t.trackKey, p.id).catch(() => ({ error: "closed" as const }));
+      if ("error" in r) {
+        toast(r.error === "not_house" ? "Only house records go on straight from the crate." : "Couldn't put that on right now.", "plain", 3600);
+        return;
+      }
+      p.cue(r.track, r.ticket);
+      refreshFlowUi();
+      toast(`▶ Up next for the whole room: ${r.track.title}`, "green", 3600);
+    },
+    [toast, refreshFlowUi]
   );
   const uncue = useCallback(
     (key: string) => {
@@ -1538,6 +1611,31 @@ export default function Bar({
     setMenuOpen(false);
   };
   const saved = Object.keys(progress.dug).length;
+  // the Backpack's view of the room: what's on, what's cued, can you cue
+  const bagRoom = useMemo<RoomView>(() => {
+    const waitS = Math.ceil(flowUi.cueWaitLeft / 1000);
+    return {
+      nowKey: np.track?.trackKey ?? null,
+      cueKeys: cue.map((c) => c.track.trackKey).filter((k): k is string => !!k),
+      canQueue: soloMode || flowUi.canCue,
+      reason:
+        waitS > 0
+          ? `Wait ${waitS}s`
+          : flowUi.myCue >= flowUi.cueCap
+            ? `You have ${flowUi.myCue} in line`
+            : "Wait for one to play",
+    };
+  }, [np.track, cue, flowUi, soloMode]);
+  // the records filed in the room you're standing in ("Found here")
+  const hereKeys = useMemo(
+    () =>
+      new Set(
+        shelves
+          .filter((s) => (s.room ?? HUB_ROOM) === room)
+          .flatMap((s) => s.records.map((t) => t.trackKey).filter((k): k is string => !!k))
+      ),
+    [shelves, room]
+  );
   const navContent = (k: NavKey) => {
     if (k === "now")
       return (
@@ -1572,11 +1670,11 @@ export default function Bar({
       return (
         <>
           <div className="navHint">Dig: walk up to any crate and hear 30s of each record.</div>
-          <button className="navAct" onClick={go(() => { setMapOpen(false); setDexOpen(true); setUnseenGifts(0); })}>
-            My crate <span>{saved} saved · C</span>
+          <button className="navAct" onClick={go(() => openBackpack())}>
+            Backpack <span>{backpack ? `${backpack.copies.length}/${backpack.cap} records you own` : "records you own"} · C</span>
           </button>
-          <button className="navAct" onClick={go(() => { setMapOpen(false); setDexOpen(false); setBackpackOpen(true); })}>
-            Backpack <span>{backpack ? `${backpack.copies.length}/${backpack.cap} copies` : "your copies"} · B</span>
+          <button className="navAct" onClick={go(() => { setMapOpen(false); setBackpackOpen(false); setDexOpen(true); setUnseenGifts(0); })}>
+            My crate <span>{saved} ✦ saved · K</span>
           </button>
           <button className="navAct" onClick={go(() => { setDexOpen(false); setMapOpen(true); })}>
             Map of the realms <span>M</span>
@@ -1666,6 +1764,21 @@ export default function Bar({
       <canvas ref={canvasRef} id="c" />
 
       <div id="topbar" className={menuOpen ? "open" : ""}>
+        {/* phone: the Backpack keeps its own button beside ☰ */}
+        {started && (
+          <span className="bagWrap touchBag">
+            <button
+              id="bagBtnTouch"
+              className={backpackOpen ? "on" : ""}
+              onClick={toggleBackpack}
+              aria-expanded={backpackOpen}
+              aria-label={backpack ? `Backpack: ${backpack.copies.length} of ${backpack.cap} records you own` : "Backpack"}
+            >
+              ◆ {backpack ? `${backpack.copies.length}/${backpack.cap}` : "Bag"}
+            </button>
+            {bagHint && <BagHint onClose={dismissBagHint} />}
+          </span>
+        )}
         {/* phone: every destination lives in one sheet behind ☰ */}
         <button
           id="menuBtn"
@@ -1694,6 +1807,19 @@ export default function Bar({
               <span className="navSub">{Math.max(roster, 1)} listening</span>
               {unseenAdds > 0 && <span className="badge">{unseenAdds}</span>}
             </button>
+            <span className="bagWrap">
+              <button
+                id="bagBtn"
+                className={"navItem bag" + (backpackOpen ? " on" : "")}
+                onClick={toggleBackpack}
+                aria-expanded={backpackOpen}
+                aria-label={backpack ? `Backpack: ${backpack.copies.length} of ${backpack.cap} records you own` : "Backpack"}
+              >
+                Backpack{backpack ? <span className="navSub">· {backpack.copies.length}/{backpack.cap}</span> : null}
+                <kbd className="navKey">C</kbd>
+              </button>
+              {bagHint && <BagHint onClose={dismissBagHint} />}
+            </span>
             {(["discover", "contribute", "world"] as const).map((k) => (
               <button
                 key={k}
@@ -1775,9 +1901,19 @@ export default function Bar({
           onClose={() => setCrate(null)}
           onFlip={flip}
           onPick={(i) => setCrate((c) => (c ? { ...c, idx: i } : c))}
-          claimFor={(t) => claimButton(t, copies, backpack)}
-          copiesLeft={(t) => copiesLeft(t, copies)}
+          claimFor={(t) => claimButton(t, copies, backpack, houseSet)}
+          copiesLeft={(t) => copiesLeft(t, copies, houseSet)}
           onClaim={(t) => void claimFromCrate(t)}
+          house={{
+            is: (t) => !!t.trackKey && houseSet.has(t.trackKey),
+            canQueue: flowUi.canCue,
+            status: soloMode ? "Just you in here: it plays right away." : cueLabel(flowUi, false, "Your cues"),
+            onPutOn: (t) => void queueHouse(t),
+          }}
+          claimed={justClaimed}
+          capLine={backpack ? `${backpack.copies.length}/${backpack.cap}` : ""}
+          onOpenBackpack={() => openBackpack(justClaimed?.copyId ?? null)}
+          onKeepDigging={() => setJustClaimed(null)}
           slots={`${Object.keys(progress.dug).length}/${slotCap(progress)}`}
           paused={swap !== null}
           onKeep={(t) => {
@@ -1822,9 +1958,18 @@ export default function Bar({
       {backpackOpen && (
         <Backpack
           backpack={backpack}
-          canQueue={flowUi.canCue}
-          status={soloMode ? "Just you in here: it plays right away." : cueLabel(flowUi, false, "Your cues")}
+          room={bagRoom}
+          here={hereKeys}
+          sourceOf={(c) => {
+            const s = sourceCrate(c.trackKey, shelves);
+            return s ? `${s.label} (${roomName(s.room)})` : null;
+          }}
+          highlight={bagHighlight}
           onQueue={(c) => void queueCopy(c)}
+          onPreview={(c) => {
+            const t = copyTrack(c, shelvesRef.current);
+            playerRef.current?.startPreview(t, previewStart(t));
+          }}
           onClose={() => setBackpackOpen(false)}
         />
       )}
@@ -2125,19 +2270,57 @@ const NAV_LABEL: Record<NavKey, string> = {
   help: "Help",
 };
 const WELCOME_KEY = "hallu-welcome-v1";
+const BAG_HINT_KEY = "hallu-bag-hint-v1";
+
+/** a room's plain name for the Backpack ("THE GARDEN" from "庭 · THE GARDEN") */
+function roomName(id: string | undefined): string {
+  const name = ROOMS[id ?? HUB_ROOM]?.name ?? "";
+  return name.split(" · ").find((p) => /[A-Za-z]/.test(p)) ?? name;
+}
+
+/** The one-time cue under the Backpack button: where owned records live. */
+function BagHint({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="bagHint" role="status">
+      <span>
+        Records you claim live in your <b>Backpack</b>
+        <span className="deskOnly">
+          {" "}
+          (<kbd>C</kbd>). Your ✦ saves are in My crate (<kbd>K</kbd>)
+        </span>
+        .
+      </span>
+      <button type="button" onClick={onClose} aria-label="Got it, hide this tip">
+        ✕
+      </button>
+    </div>
+  );
+}
 
 /** The ? panel: the three music actions, then the keys (desktop). */
 function HelpContent() {
   return (
     <div className="helpBody">
       <p className="navLead">Sombra Radio: one record, the whole venue, together.</p>
+      <ol className="helpSteps">
+        <li>
+          <b>Discover.</b> Walk up to a crate. Each record plays 30s, just for you.
+        </li>
+        <li>
+          <b>Claim.</b> Hit ◆ Claim copy. Every track has only {COPIES_PER_TRACK} numbered copies in the whole bar.
+        </li>
+        <li>
+          <b>Open your Backpack</b> (<kbd>C</kbd>). The records you own live there, {STARTER_CAPACITY} spaces to start.
+        </li>
+        <li>
+          <b>Put it on.</b> A record you own goes on for the whole room.
+        </li>
+      </ol>
       <dl className="helpActs">
-        <dt>Dig for records</dt>
-        <dd>Walk up to a crate. Each record plays 30s, just for you.</dd>
+        <dt>House records</dt>
+        <dd>The Gongo crate and the Sombra Selection. Nobody claims them: anyone can put them on from the crate.</dd>
         <dt>Save to my crate</dt>
-        <dd>✦ in a crate. It&apos;s yours, and it counts on the weekly board.</dd>
-        <dt>Play next for the room</dt>
-        <dd>⤵ in a crate. Everyone hears it next.</dd>
+        <dd>✦ in a crate, or <kbd>K</kbd>. A bookmark for you that counts on the weekly board. It doesn&apos;t own the record.</dd>
         <dt>Submit a record</dt>
         <dd>The drop box or the Omakase counter. Reviewed every week.</dd>
       </dl>
@@ -2147,8 +2330,8 @@ function HelpContent() {
         <span><kbd>click</kbd> go there</span>
         <span><kbd>E</kbd> use</span>
         <span><kbd>M</kbd> map</span>
-        <span><kbd>C</kbd> my crate</span>
-        <span><kbd>B</kbd> backpack</span>
+        <span><kbd>C</kbd> backpack</span>
+        <span><kbd>K</kbd> my crate (saves)</span>
         <span><kbd>R</kbd> wander</span>
         <span><kbd>V</kbd> camera</span>
         <span><kbd>Space</kbd> jump</span>
@@ -2201,7 +2384,7 @@ function RadioCounter({
           <section>
             <h4>How you add to it</h4>
             <ul>
-              <li><b>Play next</b>: pick from any crate and the room hears it next</li>
+              <li><b>Put it on</b>: a record you&apos;ve claimed, from your Backpack, or any house record</li>
               <li><b>Submit a record</b>: reviewed every week into This Week or the Selection</li>
               <li><b>Save to your crate</b> as you dig: it counts on the weekly board</li>
             </ul>
@@ -2850,6 +3033,11 @@ function Crate({
   claimFor,
   copiesLeft,
   onClaim,
+  house,
+  claimed,
+  capLine,
+  onOpenBackpack,
+  onKeepDigging,
   onKeep,
   slots,
   paused,
@@ -2864,6 +3052,14 @@ function Crate({
   /** copies of this record still in crates (null = unknown) */
   copiesLeft: (t: Track) => number | null;
   onClaim: (t: Track) => void;
+  /** house records (the Gongo crate, the Selection): no claim, put on directly */
+  house: { is: (t: Track) => boolean; canQueue: boolean; status: string; onPutOn: (t: Track) => void };
+  /** a claim just landed here */
+  claimed: { copyId: string; serial: number | null } | null;
+  /** "3/8": your backpack */
+  capLine: string;
+  onOpenBackpack: () => void;
+  onKeepDigging: () => void;
   /** false = not kept (the crate is full; the host offers a swap) */
   onKeep: (t: Track) => boolean;
   /** "3/10" — your crate's slots */
@@ -2873,8 +3069,8 @@ function Crate({
 }) {
   // The back of the record: the whole tracklist at once (Side A / Side B),
   // play counts, ↑/↓ to move, K to keep. The selected record previews just
-  // for you (the room plays on). Nothing here reaches the room's queue: a
-  // track goes on it only from your backpack, as a copy you've claimed.
+  // for you (the room plays on). Only a house record goes on the room's queue
+  // from here; anything else goes on from your backpack, as a copy you've claimed.
   const { shelf, idx } = crate;
   const rec = shelf.records[idx];
   const kept = dug[recordKey(rec)];
@@ -2889,6 +3085,8 @@ function Crate({
     listRef.current?.querySelector<HTMLElement>(`[data-i="${idx}"]`)?.scrollIntoView({ block: "nearest" });
   }, [idx]);
   const claim = claimFor(rec);
+  const isHouse = house.is(rec);
+  const houseCrate = shelf.records.length > 0 && shelf.records.every((t) => house.is(t));
   const keepIt = () => {
     if (kept) return;
     if (onKeep(rec)) setCaught(recordKey(rec));
@@ -2957,10 +3155,39 @@ function Crate({
               {pos(idx)} · played {rec.plays ?? 0} {(rec.plays ?? 0) === 1 ? "time" : "times"}
               {rec.durationSeconds ? ` · ${fmtLen(rec.durationSeconds)}` : ""}
             </div>
-            {claim && (
-              <button id="claimBtn" onClick={() => onClaim(rec)} disabled={claim.disabled} title={claim.hint}>
-                {claim.label}
-              </button>
+            {claimed ? (
+              <div className="claimDone" role="status">
+                <div>
+                  ◆ Copy #{claimed.serial ?? "?"} of {COPIES_PER_TRACK} is yours{capLine ? ` · ${capLine}` : ""}
+                </div>
+                <div className="claimDoneBtns">
+                  <button type="button" className="primary" onClick={onOpenBackpack}>
+                    Open Backpack <kbd className="deskOnly">C</kbd>
+                  </button>
+                  <button type="button" onClick={onKeepDigging}>
+                    Keep digging
+                  </button>
+                </div>
+              </div>
+            ) : isHouse ? (
+              <>
+                <button
+                  id="claimBtn"
+                  className="house"
+                  onClick={() => house.onPutOn(rec)}
+                  disabled={!house.canQueue}
+                  title={house.canQueue ? "Everyone in the bar hears it next" : house.status}
+                >
+                  ▶ Put it on for the room
+                </button>
+                <div className="houseNote">House record: nobody claims it, anyone can put it on.</div>
+              </>
+            ) : (
+              claim && (
+                <button id="claimBtn" onClick={() => onClaim(rec)} disabled={claim.disabled} title={claim.hint}>
+                  {claim.label}
+                </button>
+              )
             )}
             <button
               id="keepBtn"
@@ -2997,7 +3224,8 @@ function Crate({
           </ol>
         </div>
         <footer className="rbFoot">
-          <span className="deskOnly">↑ ↓ dig · K save · </span>◆ copies left to claim · ▶ plays in the room · ✦ in your crate
+          <span className="deskOnly">↑ ↓ dig · K save · </span>
+          {houseCrate ? "house records: anyone can put them on" : "◆ copies left to claim"} · ▶ plays in the room · ✦ saved in My crate
         </footer>
       </div>
     </div>

@@ -1,7 +1,7 @@
 import "server-only";
 import { adminClient } from "@/lib/members/store";
 import { isFullSet } from "@/lib/bar/flow";
-import type { Availability, ClaimResult, OwnedCopy } from "./rules";
+import { HOUSE_CRATES, type Availability, type ClaimResult, type OwnedCopy } from "./rules";
 import type { TicketTrack } from "./ticket";
 
 // Server-side reads/writes for collectible copies (service role only: the
@@ -66,9 +66,7 @@ export async function claim(member: string, copyId: string, cap: number): Promis
   return { result, trackKey: (c?.track_key as string | undefined) ?? undefined };
 }
 
-/** What a cue of this copy plays — only if `member` holds it. The catalog's
- *  record (when it still exists) supplies the id plays are counted against and
- *  the length the queue rules need. */
+/** What a cue of this copy plays — only if `member` holds it. */
 export async function cueTrackFor(member: string, copyId: string): Promise<TicketTrack | null> {
   const sb = adminClient();
   if (!sb) return null;
@@ -86,16 +84,75 @@ export async function cueTrackFor(member: string, copyId: string): Promise<Ticke
     .order("created_at")
     .limit(1)
     .maybeSingle();
+  return ticketTrack(c.track_key as string, rec, {
+    title: c.title as string,
+    artist: c.artist as string,
+    ytId: (c.yt_id as string | null) ?? undefined,
+    scUrl: (c.sc_url as string | null) ?? undefined,
+  });
+}
+
+/** Is this track a house record (in the Gongo crate or the Sombra Selection)?
+ *  A track filed in a house crate is house everywhere: never claimable. */
+export async function isHouseTrack(trackKey: string): Promise<boolean> {
+  const sb = adminClient();
+  if (!sb) return false;
+  const { data } = await sb
+    .from("records")
+    .select("id, shelves!inner ( slug )")
+    .eq("track_key", trackKey)
+    .in("shelves.slug", [...HOUSE_CRATES])
+    .limit(1);
+  return !!data?.length;
+}
+
+/** The track a copy is of (null if there's no such copy). */
+export async function copyTrackKey(copyId: string): Promise<string | null> {
+  const sb = adminClient();
+  if (!sb) return null;
+  const { data } = await sb.from("hallu_copies").select("track_key").eq("id", copyId).maybeSingle();
+  return (data?.track_key as string | undefined) ?? null;
+}
+
+/** What a cue of a house record plays — only if it is one. */
+export async function houseCueTrack(trackKey: string): Promise<TicketTrack | null> {
+  const sb = adminClient();
+  if (!sb) return null;
+  const { data: rec } = await sb
+    .from("records")
+    .select("id, title, artist, yt_id, sc_url, duration_seconds, shelves!inner ( slug )")
+    .eq("track_key", trackKey)
+    .in("shelves.slug", [...HOUSE_CRATES])
+    .order("created_at")
+    .limit(1)
+    .maybeSingle();
+  if (!rec) return null;
+  return ticketTrack(trackKey, rec, {
+    title: rec.title as string,
+    artist: rec.artist as string,
+    ytId: (rec.yt_id as string | null) ?? undefined,
+    scUrl: (rec.sc_url as string | null) ?? undefined,
+  });
+}
+
+/** A cue ticket's track. The catalog's record (when it still exists) supplies
+ *  the id plays are counted against and the length the queue rules need; the
+ *  media ids come from `src`. */
+function ticketTrack(
+  trackKey: string,
+  rec: Record<string, unknown> | null,
+  src: { title: string; artist: string; ytId?: string; scUrl?: string }
+): TicketTrack {
   const slug = (rec?.shelves as { slug?: string | null } | null)?.slug ?? undefined;
   const duration = (rec?.duration_seconds as number | null) ?? null;
   return {
     id: (rec?.id as string | undefined) ?? undefined,
-    title: (rec?.title as string | undefined) ?? (c.title as string),
-    artist: (rec?.artist as string | undefined) ?? (c.artist as string),
-    ytId: (c.yt_id as string | null) ?? undefined,
-    scUrl: (c.sc_url as string | null) ?? undefined,
+    title: (rec?.title as string | undefined) ?? src.title,
+    artist: (rec?.artist as string | undefined) ?? src.artist,
+    ytId: src.ytId,
+    scUrl: src.scUrl,
     durationSeconds: duration,
     fullSet: isFullSet(slug, duration) || undefined,
-    trackKey: c.track_key as string,
+    trackKey,
   };
 }
