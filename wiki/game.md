@@ -9,7 +9,7 @@ HALLUCINATE plays like **Pokémon meets crate-digging**. Each room is a *realm* 
 | `lib/bar/progress.ts` | Your save file (localStorage `hallucinate-progress-v1`): realms visited, records seen and dug, secrets, keepers met, badges. It also covers tiers, titles and `pickDig()`. |
 | `lib/bar/engine.ts` | Game zones (`pile`, `keeper`, `secret`, `wander`), the dig timer and pile rest, click-to-use with grid A* pathfinding, walk-through doors, sprint, `travelTo()` / `wander()`. |
 | `lib/bar/three/game.ts` | 3D for the game layer: dig mounds with loot beams and sparkles, the keeper's `!`/`…` bubble, secret hatches, the maneki-neko. |
-| `components/` (Bar.tsx + game UI) | Dig reveal card, keeper dialogue, Crate Dex (C), world map (M), arrival banners, toasts. |
+| `components/` (Bar.tsx + game UI) | Dig reveal card, keeper dialogue, Backpack (C/B), Crate Dex / My crate (K), world map (M), arrival banners, toasts. |
 
 ## Rules of play
 - **Dig:** stand on a glinting pile and press E (or click it). After ~0.8s a record from that realm's crates pops out, preferring ones you haven't dug or seen. The pile then rests for 40s.
@@ -121,11 +121,23 @@ A track in the catalog (`records`) is not a collectible. Every distinct track (`
   - A claim sends a server-signed `copy` event, and everyone's crates drop that copy live.
   - Opening a crate refetches its availability (`crateCopies`).
   - The backpack refetches when opened and when the tab regains focus.
-- **Queue rule:** only a copy you hold goes on the room's queue (Backpack **B**, or the deck).
+- **Queue rule:** only a copy you hold goes on the room's queue (Backpack **C** / **B**, or the deck), plus house records (below).
   - `requestCue` checks ownership and returns a ticket signed with `TICKET_SIGNING_KEY` (ECDSA P-256, server only).
   - The host (`presence.ts` `admitIntent`) queues only cues with a valid, unexpired, unspent ticket issued to the sender, and plays the **signed** track.
   - Crate play-next, Dex ⤵ and Added-board ⤵ are gone.
   - God-mode `admin` events must carry a signed ticket too (`boothCommand`).
   - Keys: `TICKET_SIGNING_KEY` + `NEXT_PUBLIC_TICKET_PUBLIC_KEY`. With no key, nothing verifies, so queueing fails closed.
 - **Rio's step 2** is a **practice spin**: during that step the deck plays a ✦-saved record just for you (a preview) and counts the step. It never reaches the queue. ✦ Save / My crate are unchanged.
+- **House records (Oct 5, owner decision):** the Gongo crate and the Sombra Selection (`HOUSE_CRATES` in `lib/collection/rules.ts`) are there to be heard, not collected.
+  - Nobody can claim them. `claimCopy` refuses with `"house"` before the claim RPC if the copy's track is filed in a house crate (`isHouseTrack`), even when the same track is also in another crate. Their copies still exist in `hallu_copies` (no schema change); they just never leave.
+  - Any member can put one on from the crate (▶ Put it on for the room). `requestHouseCue` signs a normal cue ticket with `copy: "house"`; the host needs no change.
+  - Crates never show ◆ counts for them or hide them as sold out (`houseKeys` in `lib/collection/crate.ts`).
+- **The Backpack drawer (Oct 5):** `components/game/Backpack.tsx`, logic in `lib/collection/backpack.ts`.
+  - Opened by the **Backpack · n/8** button in the top bar (phones: the **◆ n/8** button beside ☰), **C**, or **B**. **K** opens My crate (✦ saves); inside a crate K still saves.
+  - A drawer on the right on desktop (the room stays in view), a sheet on phones. Shows owned count, capacity and spaces left, search, and filters (All, Ready, New = claimed in the last day, Queued, Found here = filed in the room you're in; empty filters hide).
+  - Each row: title, artist, copy N of 3, source crate (room), and one state: **▶ Put it on** (ready), **Queued · #n in line**, **♪ On now**, or the reason you can't cue yet (cue wait / your cue cap). Plus a 30s private preview. Put it on uses `queueCopy` → `requestCue`, unchanged.
+  - States are derived from the room's cue list by track key. You hold one copy per track, so a cued track you own counts as your copy queued.
+  - After a claim, the crate shows **Open Backpack** (highlights the new copy) / **Keep digging** instead of a toast.
+  - A one-time tip under the Backpack button (`hallu-bag-hint-v1` in localStorage) for anyone who owns a copy or has saves. It's gone for good once the Backpack is opened or the tip is dismissed.
+  - Help (?) explains the four steps: discover, claim, open Backpack, put it on.
 - **Tests:** `npm test` runs the vitest unit suites and `tests/db`, which uses a throwaway Postgres 16 in Docker and applies the real migration.

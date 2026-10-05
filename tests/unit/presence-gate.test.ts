@@ -53,6 +53,19 @@ describe("the host's queue gate", () => {
     expect(h.room!.cue).toEqual([]);
   });
 
+  it("queues a server-signed house-record cue (no copy) with no host change", async () => {
+    const { h } = host();
+    const house = { title: "Gongo set", artist: "Gongo", scUrl: "https://soundcloud.com/gongo-atx/set", trackKey: "sc:set" };
+    const ticket = sign({ k: "cue", copy: "house", by: "guest", track: house })!;
+    h.onIntent({ kind: "cue", track: house, ticket, by: "#fff", byId: "guest" });
+    await settle();
+    expect(h.room!.cue.map((c) => c.track.trackKey)).toEqual(["sc:set"]);
+    // a house record without the server's ticket is still just a bare cue
+    h.onIntent({ kind: "cue", track: { ...house, trackKey: "sc:other" }, by: "#fff", byId: "guest" });
+    await settle();
+    expect(h.room!.cue).toHaveLength(1);
+  });
+
   it("queues a server-signed cue, playing the signed track", async () => {
     const { h } = host();
     const ticket = sign({ k: "cue", copy: "c1", by: "guest", track: owned })!;

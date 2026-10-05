@@ -1,21 +1,32 @@
 // What a crate shows and offers, given which copies are left. Pure (no React,
 // no server) so the rules are tested on their own.
 
-import type { Track } from "@/lib/bar/types";
-import { COPIES_PER_TRACK, type Availability, type OwnedCopy } from "./rules";
+import type { Shelf, Track } from "@/lib/bar/types";
+import { COPIES_PER_TRACK, isHouseCrate, type Availability, type OwnedCopy } from "./rules";
 
-/** Copies of a track still in crates; null when we can't say (collecting closed). */
-export function copiesLeft(t: Track, avail: Availability | null): number | null {
-  if (!avail || !t.trackKey) return null;
+/** Track keys of every house record (filed in a house crate). A house track
+ *  is house in every crate it's in: never claimable, never hidden. */
+export function houseKeys(shelves: Shelf[]): Set<string> {
+  const out = new Set<string>();
+  for (const s of shelves) if (isHouseCrate(s.slug)) for (const t of s.records) if (t.trackKey) out.add(t.trackKey);
+  return out;
+}
+
+const NONE: ReadonlySet<string> = new Set();
+
+/** Copies of a track still in crates; null when we can't say (collecting
+ *  closed) or it doesn't apply (a house record). */
+export function copiesLeft(t: Track, avail: Availability | null, house: ReadonlySet<string> = NONE): number | null {
+  if (!avail || !t.trackKey || house.has(t.trackKey)) return null;
   return avail[t.trackKey]?.length ?? 0;
 }
 
 /** A crate's records on show: a track whose three copies are all claimed is
  *  gone from every crate (it still plays on Sombra Radio, which reads the
  *  whole catalog). Unknown availability hides nothing. */
-export function claimableRecords(records: Track[], avail: Availability | null): Track[] {
+export function claimableRecords(records: Track[], avail: Availability | null, house: ReadonlySet<string> = NONE): Track[] {
   if (!avail) return records;
-  return records.filter((t) => copiesLeft(t, avail) !== 0);
+  return records.filter((t) => copiesLeft(t, avail, house) !== 0);
 }
 
 /** A copy was claimed (by anyone): it leaves the crate. */
@@ -39,13 +50,15 @@ export interface ClaimButton {
 }
 
 /** The ◆ button for one record: claimable only while a copy is left and you
- *  have room (and don't already hold this track). Null = collecting closed. */
+ *  have room (and don't already hold this track). Null = collecting closed,
+ *  or a house record (nobody claims those). */
 export function claimButton(
   t: Track,
   avail: Availability | null,
-  backpack: { cap: number; copies: OwnedCopy[] } | null
+  backpack: { cap: number; copies: OwnedCopy[] } | null,
+  house: ReadonlySet<string> = NONE
 ): ClaimButton | null {
-  const left = copiesLeft(t, avail);
+  const left = copiesLeft(t, avail, house);
   if (left === null || !t.trackKey) return null;
   if (!backpack) return { label: "◆ Claim copy", disabled: true, hint: "Knock in to start collecting" };
   const held = backpack.copies.length;
